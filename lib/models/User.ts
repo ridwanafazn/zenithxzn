@@ -12,6 +12,7 @@ export interface IUser extends Document {
     isMenstruating: boolean;
     activeHabits: Record<string, any>; 
   };
+  hijriOffset?: number; // Tambahan untuk kalibrasi waktu
   createdAt: Date;
   updatedAt: Date;
 }
@@ -28,11 +29,11 @@ const UserSchema = new Schema<IUser>(
         unique: true, 
         lowercase: true, 
         trim: true,
-        sparse: true // Sparse penting agar user lama yang belum punya username tidak error
+        sparse: true // Penting: Mengizinkan nilai null/undefined untuk user lama
     },
 
     photoURL: { type: String },
-    gender: { type: String, enum: ["male", "female"] },
+    gender: { type: String, enum: ["male", "female"], default: "male" },
     onboardingCompleted: { type: Boolean, default: false },
 
     preferences: {
@@ -42,6 +43,8 @@ const UserSchema = new Schema<IUser>(
         default: {}
       },
     },
+    
+    hijriOffset: { type: Number, default: 0 },
   },
   { 
     timestamps: true,

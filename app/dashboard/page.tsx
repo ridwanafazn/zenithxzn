@@ -16,13 +16,19 @@ import {
   Mail,
   Edit3,
   Check,
-  Dices, // Icon Dadu
-  AtSign // Icon @
+  Dices,
+  AtSign,
+  ShieldCheck, 
+  Star 
 } from "lucide-react"; 
 import TrackerList from "@/components/tracker/TrackerList";
-import { checkUserStatus, updateUserProfile } from "@/actions/user"; // Import fungsi baru
+import { checkUserStatus, updateUserProfile } from "@/actions/user";
 import { getDailyLog } from "@/actions/log";
 import { cn } from "@/lib/utils";
+import { MASTER_HABITS } from "@/lib/constants";
+// NEW IMPORTS: Sistem Waktu & Offset Global
+import { getGlobalHijriOffset } from "@/actions/system";
+import { getSmartHijriDate, formatHijriDate, getMoonPhaseIcon } from "@/lib/utils";
 
 export default function DashboardPage() {
   const router = useRouter();
@@ -31,6 +37,7 @@ export default function DashboardPage() {
   const [dailyLog, setDailyLog] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [greeting, setGreeting] = useState("");
+  const [hijriOffset, setHijriOffset] = useState(0); // STATE BARU: Offset Hijriyah
   
   // STATE MODAL & EDIT
   const [isProfileOpen, setIsProfileOpen] = useState(false);
@@ -44,7 +51,7 @@ export default function DashboardPage() {
   const [saveLoading, setSaveLoading] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  // Logic Sapaan
+  // Logic Sapaan & Load Offset
   useEffect(() => {
     const hour = new Date().getHours();
     if (hour < 4) setGreeting("Qiyamul Lail ..");
@@ -52,9 +59,26 @@ export default function DashboardPage() {
     else if (hour < 15) setGreeting("Selamat Siang ..");
     else if (hour < 18) setGreeting("Selamat Sore ..");
     else setGreeting("Selamat Malam ..");
+
+    // NEW: Fetch Hijri Offset Global saat load
+    getGlobalHijriOffset().then(setHijriOffset);
   }, []);
 
-  // Load Data
+  // NEW: Kalkulasi Info Tanggal (Visual Only)
+  const dateInfo = useMemo(() => {
+      const today = new Date();
+      // Format Masehi (Senin, 10 Oktober 2025)
+      const masehi = today.toLocaleDateString("id-ID", { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      
+      // Format Hijriyah Cerdas
+      const hijriObj = getSmartHijriDate(today, hijriOffset);
+      const hijriText = formatHijriDate(hijriObj);
+      const moonIcon = getMoonPhaseIcon(hijriObj.day);
+
+      return { masehi, hijriText, moonIcon };
+  }, [hijriOffset]);
+
+  // Load Data User & Log
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
       if (!currentUser) {
@@ -78,12 +102,12 @@ export default function DashboardPage() {
         setDbUser(userData);
         setDailyLog(logData || { checklists: [], counters: {} });
 
-        // Init Form Data
+        // LOGIKA BARU: Pastikan editForm mengambil photoURL dari DB, fallback kosong jika belum ada
         setEditForm({
             displayName: userData.displayName || "",
             username: userData.username || "",
             gender: userData.gender || "male",
-            photoURL: userData.photoURL || currentUser.photoURL || ""
+            photoURL: userData.photoURL || "" 
         });
 
       } catch (error) {
@@ -101,9 +125,7 @@ export default function DashboardPage() {
     router.push("/auth/login");
   };
 
-  // --- LOGIC EDIT PROFILE ---
   const handleGenerateAvatar = () => {
-    // Gunakan DiceBear API untuk avatar random yang keren
     const randomSeed = Math.random().toString(36).substring(7);
     const style = editForm.gender === 'female' ? 'adventurer-neutral' : 'adventurer'; 
     const newAvatar = `https://api.dicebear.com/9.x/${style}/svg?seed=${randomSeed}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
@@ -118,7 +140,6 @@ export default function DashboardPage() {
 
     if (res.success) {
         setIsEditing(false);
-        // Update local state agar UI langsung berubah tanpa refresh
         setDbUser((prev: any) => ({ 
             ...prev, 
             displayName: editForm.displayName,
@@ -126,30 +147,45 @@ export default function DashboardPage() {
             gender: editForm.gender,
             photoURL: editForm.photoURL
         }));
-        setUser((prev: any) => ({ ...prev, photoURL: editForm.photoURL }));
+        // setUser((prev: any) => ({ ...prev, photoURL: editForm.photoURL })); // Opsional: tidak perlu update Firebase user state jika kita fully rely on DB
     } else {
         setSaveError(res.error || "Gagal menyimpan.");
     }
     setSaveLoading(false);
   };
 
-  // Kalkulasi Progress Real-time
-  const progressStats = useMemo(() => {
-    if (!dailyLog || !dbUser) return { completed: 0, percent: 0, totalActive: 0 };
+  // Kalkulasi Progress Berbasis Kategori (Wajib vs Sunnah)
+  const stats = useMemo(() => {
+    if (!dailyLog || !dbUser) return { wajibPercent: 0, sunnahPercent: 0, totalScore: 0 };
     
-    let totalActive = 5; 
-    if (dbUser.preferences?.activeHabits) {
-        totalActive += Object.values(dbUser.preferences.activeHabits).filter(v => v === true).length;
+    // 1. Tentukan Active Habits
+    const activeHabitIds = Object.keys(dbUser.preferences?.activeHabits || {}).filter(k => dbUser.preferences.activeHabits[k]);
+    // Tambahkan habit wajib (karena wajib tidak masuk di preferences toggle, dia selalu aktif)
+    const allWajibIds = MASTER_HABITS.filter(h => h.category === 'wajib').map(h => h.id);
+    
+    // Gabungkan list target
+    const targetIds = Array.from(new Set([...activeHabitIds, ...allWajibIds]));
+
+    // 2. Pisahkan Wajib & Sunnah
+    const wajibTargets = targetIds.filter(id => MASTER_HABITS.find(h => h.id === id)?.category === 'wajib');
+    const sunnahTargets = targetIds.filter(id => MASTER_HABITS.find(h => h.id === id)?.category !== 'wajib');
+
+    // 3. Hitung Completed
+    const checked = dailyLog.checklists || [];
+    const completedWajib = wajibTargets.filter(id => checked.includes(id)).length;
+    const completedSunnah = sunnahTargets.filter(id => checked.includes(id)).length;
+
+    // 4. Hitung Persentase (Handle Haid)
+    let wajibPercent = 0;
+    if (dbUser.preferences?.isMenstruating) {
+        wajibPercent = 100; // Auto full jika haid
+    } else {
+        wajibPercent = wajibTargets.length > 0 ? Math.round((completedWajib / wajibTargets.length) * 100) : 0;
     }
-    
-    // Filter haid logic (simple visual only)
-    if (dbUser.preferences?.isMenstruating) totalActive = totalActive - 5; // Kurangi wajib
-    if (totalActive < 1) totalActive = 1;
 
-    const completed = dailyLog.checklists?.length || 0;
-    const percent = Math.min(100, Math.round((completed / totalActive) * 100));
+    const sunnahPercent = sunnahTargets.length > 0 ? Math.round((completedSunnah / sunnahTargets.length) * 100) : 0;
 
-    return { completed, percent, totalActive };
+    return { wajibPercent, sunnahPercent, completedWajib, totalWajib: wajibTargets.length };
   }, [dailyLog, dbUser]);
 
   if (loading || !user || !dbUser) {
@@ -169,25 +205,36 @@ export default function DashboardPage() {
 
       <div className="relative mx-auto max-w-lg px-6 pt-8">
         
-        {/* Header */}
+        {/* UPDATED HEADER: With Date & Moon Phase */}
         <header className="mb-8 flex items-center justify-between">
           <div>
             <span className="text-xs font-bold tracking-widest text-emerald-400 uppercase mb-1 block">
               {greeting}
             </span>
-            <h1 className="text-2xl font-bold text-white tracking-tight text-glow">
+            <h1 className="text-2xl font-bold text-white tracking-tight text-glow mb-1">
               {dbUser.displayName?.split(" ")[0]}
             </h1>
+            
+            {/* NEW: TANGGAL & HIJRIYAH INDICATOR */}
+            <div className="flex flex-col md:flex-row md:items-center md:gap-2 text-xs font-medium mt-1">
+                {/* <span className="text-slate-400">{dateInfo.masehi}</span> */}
+                <span className="hidden md:inline h-1 w-1 rounded-full bg-slate-600"></span>
+                <span className="text-indigo-300 flex items-center gap-1.5 mt-0.5 md:mt-0">
+                    <span className="text-sm filter drop-shadow-md">{dateInfo.moonIcon}</span> 
+                    {dateInfo.hijriText}
+                </span>
+            </div>
           </div>
           
           <button 
             onClick={() => { setIsProfileOpen(true); setIsEditing(false); }} 
             className="relative group transition-transform active:scale-95"
           >
-            {user.photoURL || dbUser.photoURL ? (
+            {/* DICEBEAR ONLY: Hapus fallback user.photoURL */}
+            {dbUser.photoURL ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img 
-                src={dbUser.photoURL || user.photoURL} 
+                src={dbUser.photoURL} 
                 alt="Profile" 
                 className="h-10 w-10 rounded-full border-2 border-slate-800 object-cover ring-2 ring-transparent group-hover:ring-emerald-500/50 transition-all shadow-lg bg-slate-800"
               />
@@ -199,32 +246,46 @@ export default function DashboardPage() {
           </button>
         </header>
 
-        {/* Hero Card */}
-        <div className="relative mb-10 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-white/10 p-6 shadow-2xl">
+        {/* --- HERO CARD (DOUBLE LAYER PROGRESS) --- */}
+        <div className="relative mb-10 overflow-hidden rounded-3xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 border border-white/10 p-6 shadow-2xl group">
             <div className="absolute inset-0 opacity-20" style={{ backgroundImage: "radial-gradient(#ffffff 1px, transparent 1px)", backgroundSize: "20px 20px" }}></div>
             
-            <div className="relative z-10 flex justify-between items-start mb-6">
+            <div className="relative z-10 flex flex-col gap-6">
+                
+                {/* 1. LAYER WAJIB (FOUNDATION) */}
                 <div>
-                    <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-                        Statistik Harian
-                        <Zap className="h-4 w-4 text-yellow-400 fill-yellow-400" />
-                    </h2>
-                    <p className="text-xs text-slate-400 mt-1">
-                        {progressStats.completed} dari {progressStats.totalActive} amalan selesai
-                    </p>
+                    <div className="flex justify-between items-end mb-2">
+                        <div className="flex items-center gap-2 text-emerald-400">
+                            <ShieldCheck className="h-4 w-4" />
+                            <span className="text-xs font-bold tracking-widest uppercase">Fondasi (Wajib)</span>
+                        </div>
+                        <span className="text-xl font-bold font-mono text-white">{stats.wajibPercent}%</span>
+                    </div>
+                    <div className="relative h-3 w-full rounded-full bg-slate-800/80 shadow-inner overflow-hidden">
+                        <div 
+                            className="absolute left-0 top-0 h-full rounded-full bg-emerald-500 transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(16,185,129,0.5)]"
+                            style={{ width: `${stats.wajibPercent}%` }}
+                        ></div>
+                    </div>
                 </div>
-                <div className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200 font-mono">
-                    {progressStats.percent}%
-                </div>
-            </div>
 
-            <div className="relative h-4 w-full rounded-full bg-slate-950/50 shadow-inner">
-                <div 
-                    className="absolute left-0 top-0 h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-1000 ease-out shadow-[0_0_15px_rgba(16,185,129,0.4)]"
-                    style={{ width: `${progressStats.percent}%` }}
-                >
-                    <div className="absolute right-0 top-0 bottom-0 w-1 bg-white/50 blur-[1px]"></div>
+                {/* 2. LAYER SUNNAH (ELEVATION) */}
+                <div>
+                    <div className="flex justify-between items-end mb-2">
+                        <div className="flex items-center gap-2 text-amber-400">
+                            <Star className="h-4 w-4" />
+                            <span className="text-xs font-bold tracking-widest uppercase">Bonus (Sunnah)</span>
+                        </div>
+                        <span className="text-xl font-bold font-mono text-white">{stats.sunnahPercent}%</span>
+                    </div>
+                    <div className="relative h-3 w-full rounded-full bg-slate-800/80 shadow-inner overflow-hidden">
+                        <div 
+                            className="absolute left-0 top-0 h-full rounded-full bg-amber-500 transition-all duration-1000 ease-out shadow-[0_0_10px_rgba(245,158,11,0.5)]"
+                            style={{ width: `${stats.sunnahPercent}%` }}
+                        ></div>
+                    </div>
                 </div>
+
             </div>
         </div>
 
@@ -265,14 +326,14 @@ export default function DashboardPage() {
             </div>
 
             <TrackerList 
-                userData={{ uid: user.uid, preferences: dbUser.preferences }} 
+                userData={{ uid: user.uid, gender: dbUser.gender, preferences: dbUser.preferences }} 
                 dailyLog={dailyLog} 
                 date={new Date().toISOString().split('T')[0]} 
             />
         </div>
       </div>
 
-      {/* --- PROFILE MODAL (EDITABLE) --- */}
+      {/* --- PROFILE MODAL --- */}
       {isProfileOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
             <div 
@@ -282,7 +343,6 @@ export default function DashboardPage() {
             
             <div className="relative w-full max-w-sm overflow-hidden rounded-3xl border border-white/10 bg-slate-900 p-6 shadow-2xl animate-scale-in">
                 
-                {/* Close Button */}
                 <button 
                     onClick={() => setIsProfileOpen(false)}
                     className="absolute right-4 top-4 rounded-full bg-white/5 p-2 text-slate-400 hover:bg-white/10 hover:text-white"
@@ -298,12 +358,12 @@ export default function DashboardPage() {
                         
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img 
-                            src={isEditing ? editForm.photoURL : (dbUser.photoURL || user.photoURL)} 
+                            // DICEBEAR ONLY: Hapus fallback user.photoURL
+                            src={isEditing ? editForm.photoURL : (dbUser.photoURL || "")} 
                             alt="Profile" 
                             className="relative h-28 w-28 rounded-full border-4 border-slate-900 object-cover shadow-xl bg-slate-800"
                         />
 
-                        {/* Tombol Shuffle Avatar (Hanya muncul saat Edit) */}
                         {isEditing && (
                             <button 
                                 onClick={handleGenerateAvatar}
@@ -315,7 +375,7 @@ export default function DashboardPage() {
                         )}
                     </div>
 
-                    {/* --- VIEW MODE --- */}
+                    {/* VIEW MODE */}
                     {!isEditing ? (
                         <div className="w-full text-center space-y-4">
                             <div>
@@ -354,9 +414,8 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     ) : (
-                        /* --- EDIT MODE --- */
+                        /* EDIT MODE */
                         <div className="w-full space-y-4 animate-scale-in">
-                            {/* Input Display Name */}
                             <div className="space-y-1 text-left">
                                 <label className="text-xs font-medium text-slate-400 ml-1">Nama Panggilan</label>
                                 <input 
@@ -368,7 +427,6 @@ export default function DashboardPage() {
                                 />
                             </div>
 
-                            {/* Input Username */}
                             <div className="space-y-1 text-left">
                                 <label className="text-xs font-medium text-slate-400 ml-1">Username </label>
                                 <div className="relative">
@@ -379,7 +437,6 @@ export default function DashboardPage() {
                                         type="text"
                                         value={editForm.username}
                                         onChange={(e) => {
-                                            // Force Lowercase & Alphanumeric Only
                                             const val = e.target.value.toLowerCase().replace(/[^a-z0-9_.]/g, "");
                                             setEditForm(prev => ({...prev, username: val}))
                                         }}
@@ -389,12 +446,10 @@ export default function DashboardPage() {
                                 </div>
                             </div>
 
-                            {/* Input Gender */}
                             <div className="grid grid-cols-2 gap-3">
                                 <button 
                                     onClick={() => {
                                         setEditForm(prev => ({...prev, gender: "male"}));
-                                        // Auto regenerate avatar style if changing gender
                                         if (editForm.gender !== "male") {
                                             const seed = Math.random().toString(36).substring(7);
                                             setEditForm(prev => ({...prev, gender: "male", photoURL: `https://api.dicebear.com/9.x/adventurer/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9` }));
@@ -424,19 +479,16 @@ export default function DashboardPage() {
                                 </button>
                             </div>
 
-                            {/* Error Message */}
                             {saveError && (
                                 <p className="text-xs text-red-400 text-center bg-red-500/10 p-2 rounded-lg border border-red-500/20">
                                     {saveError}
                                 </p>
                             )}
 
-                            {/* Action Buttons */}
                             <div className="flex gap-3 pt-2">
                                 <button 
                                     onClick={() => {
                                         setIsEditing(false);
-                                        // Reset form ke data awal
                                         setEditForm({
                                             displayName: dbUser.displayName || "",
                                             username: dbUser.username || "",
@@ -459,7 +511,6 @@ export default function DashboardPage() {
                             </div>
                         </div>
                     )}
-                    
                 </div>
             </div>
         </div>

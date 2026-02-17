@@ -276,7 +276,7 @@ export default function HabitMarketplacePage() {
         >
           {/* ... (Tombol Save Sama) ... */}
           {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
-          <span>Simpan Perubahan</span>
+          <span>Simpan</span>
         </button>
       </div>
     </div>

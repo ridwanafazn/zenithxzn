@@ -1,26 +1,30 @@
-import type { Metadata, Viewport } from "next"; // Import Viewport
-import { Inter } from "next/font/google";
+import type { Metadata, Viewport } from "next";
+import { Plus_Jakarta_Sans } from "next/font/google"; 
 import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] });
+// TAMBAHKAN 'variable' DI SINI
+const fontSans = Plus_Jakarta_Sans({ 
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700", "800"], 
+  display: "swap",
+  variable: "--font-plus-jakarta", // <-- PENTING: Nama variabel CSS
+});
 
-// 1. SETUP METADATA PWA
 export const metadata: Metadata = {
   title: "Zenith Tracker",
   description: "Bangun kebiasaan baik, raih keberkahan.",
-  manifest: "/manifest.json", // Link ke manifest
+  manifest: "/manifest.json", 
   icons: {
-    apple: "/icons/icon-192.png", // Icon untuk iPhone
+    apple: "/icons/icon-192.png", 
   },
 };
 
-// 2. SETUP VIEWPORT (Agar tidak bisa di-zoom & warna status bar menyatu)
 export const viewport: Viewport = {
   themeColor: "#020617",
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
-  userScalable: false, // Mencegah zoom cubit (rasa native app)
+  userScalable: false, 
 };
 
 export default function RootLayout({
@@ -30,7 +34,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="id">
-      <body className={`${inter.className} bg-slate-950 text-slate-50 antialiased`}>
+      {/* TAMBAHKAN variable ke className */}
+      <body className={`${fontSans.className} ${fontSans.variable} bg-slate-950 text-slate-50 antialiased`}>
         {children}
       </body>
     </html>

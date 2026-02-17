@@ -1,10 +1,16 @@
+"use client";
+
+import { useMemo, useState, useEffect } from "react";
 import { MASTER_HABITS, TimeBlock } from "@/lib/constants";
 import HabitItem from "./HabitItem";
 import { Sunrise, Sun, Sunset, Moon, CloudMoon, CalendarDays, Plus, Droplets } from "lucide-react";
+import { getSmartHijriDate } from "@/lib/utils";
+import { getGlobalHijriOffset } from "@/actions/system";
 
 interface TrackerListProps {
   userData: {
     uid: string;
+    gender?: "male" | "female";
     preferences?: {
         isMenstruating?: boolean;
         activeHabits: Record<string, boolean>;
@@ -14,7 +20,6 @@ interface TrackerListProps {
   date: string;
 }
 
-// Map Icon ke TimeBlock untuk visualisasi lebih kaya
 const TIME_BLOCK_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
   sepertiga_malam: { label: "Sepertiga Malam", icon: CloudMoon, color: "text-indigo-400" },
   subuh: { label: "Waktu Subuh", icon: Sunrise, color: "text-blue-400" },
@@ -27,37 +32,54 @@ const TIME_BLOCK_CONFIG: Record<string, { label: string; icon: any; color: strin
 };
 
 export default function TrackerList({ userData, dailyLog, date }: TrackerListProps) {
-  // Ambil status haid dari preferences (default false jika tidak ada)
-  const isMenstruating = userData.preferences?.isMenstruating === true;
+  // State untuk Offset Global
+  const [hijriOffset, setHijriOffset] = useState(0);
 
-  // 1. Logic Filtering Utama
+  // Fetch Global Offset saat mount
+  useEffect(() => {
+    getGlobalHijriOffset().then((val) => setHijriOffset(val));
+  }, []);
+
+  // Parsing tanggal hari ini
+  const currentDateObj = new Date(date);
+  const dayOfWeek = currentDateObj.getDay(); // 0 (Ahad) - 6 (Sabtu)
+  
+  // Kalkulasi Hijriyah Cerdas (Include Maghrib Logic + Offset)
+  const hijriDate = useMemo(() => 
+    getSmartHijriDate(currentDateObj, hijriOffset), 
+  [date, hijriOffset]);
+
+  const isMenstruating = userData.preferences?.isMenstruating === true;
+  const isFriday = dayOfWeek === 5;
+  const isMale = userData.gender === "male";
+
+  // 1. Logic Filtering Utama (The Brain)
   const activeHabitsList = MASTER_HABITS.filter((habit) => {
     
-    // --- A. LOGIC HAID (FILTER KERAS) ---
-    // Jika sedang haid, sembunyikan semua Sholat (Wajib/Sunnah) dan Puasa.
-    if (isMenstruating) {
-        const id = habit.id.toLowerCase();
-        
-        // Daftar kata kunci amalan yang HARAM dilakukan saat haid
-        const forbiddenKeywords = [
-            "subuh", "zuhur", "ashar", "maghrib", "isya", // Sholat Wajib
-            "tahajjud", "witir", "dhuha", "rawatib",      // Sholat Sunnah
-            "sholat",                                     // General sholat
-            "puasa"                                       // Puasa
-        ];
+    // --- A. LOGIC HAID ---
+    if (isMenstruating && habit.isPhysical) return false;
 
-        // Cek apakah ID habit mengandung kata terlarang
-        const isForbidden = forbiddenKeywords.some(keyword => id.includes(keyword));
-        
-        if (isForbidden) return false; // Skip/Sembunyikan
+    // --- B. LOGIC WAKTU SPESIFIK (TIME ENGINE) ---
+    
+    // Filter by Days (Senin, Kamis, Jumat, dll)
+    if (habit.availableDays && !habit.availableDays.includes(dayOfWeek)) {
+        return false;
     }
 
-    // --- B. LOGIC WAJIB ---
-    // Jika habit wajib (dan lolos filter haid di atas), selalu tampilkan
+    // Filter by Hijri Date (Ayyamul Bidh)
+    if (habit.hijriDates && !habit.hijriDates.includes(hijriDate.day)) {
+        return false;
+    }
+
+    // Filter by Hijri Month (Ramadhan)
+    if (habit.hijriMonth && habit.hijriMonth !== hijriDate.month) {
+        return false;
+    }
+
+    // --- C. LOGIC WAJIB ---
     if (habit.category === "wajib") return true;
 
-    // --- C. LOGIC SUNNAH ---
-    // Jika sunnah, cek apakah user mengaktifkannya di Settings
+    // --- D. LOGIC SUNNAH (User Preference) ---
     if (habit.category === "sunnah") {
         return userData.preferences?.activeHabits?.[habit.id] === true;
     }
@@ -72,6 +94,12 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
     return acc;
   }, {} as Record<TimeBlock, typeof MASTER_HABITS>);
 
+  // 3. Sorting (Wajib di atas)
+  Object.keys(groupedHabits).forEach((key) => {
+      const k = key as TimeBlock;
+      groupedHabits[k].sort((a, b) => b.weight - a.weight);
+  });
+
   const sectionOrder: TimeBlock[] = [
     "sepertiga_malam", "subuh", "pagi_siang", "sore", "maghrib_isya", "malam_tidur", "weekly", "monthly"
   ];
@@ -81,7 +109,7 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
       
       {/* Visual Indicator Jika Mode Haid Aktif */}
       {isMenstruating && (
-        <div className="mb-6 flex items-center gap-3 rounded-xl border border-pink-500/20 bg-pink-950/10 p-4 backdrop-blur-sm">
+        <div className="mb-6 flex items-center gap-3 rounded-xl border border-pink-500/20 bg-pink-950/10 p-4 backdrop-blur-sm animate-scale-in">
             <div className="flex h-8 w-8 items-center justify-center rounded-full bg-pink-500/20 text-pink-400">
                 <Droplets className="h-4 w-4" />
             </div>
@@ -92,7 +120,13 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
         </div>
       )}
 
-      {/* Garis Timeline Vertikal (Visual Connector) */}
+      {/* Info Tanggal Hijriyah Kecil (Debug/Info) */}
+      <div className="absolute right-0 top-[-20px] text-[10px] text-slate-600 font-mono">
+         {hijriDate.day}-{hijriDate.month}-{hijriDate.year} H 
+         {hijriOffset !== 0 && <span className={hijriOffset > 0 ? "text-emerald-500" : "text-amber-500"}> ({hijriOffset > 0 ? "+" : ""}{hijriOffset})</span>}
+      </div>
+
+      {/* Garis Timeline Vertikal */}
       <div className="absolute left-[27px] top-4 bottom-0 w-px border-l border-dashed border-slate-800/50 z-0 hidden md:block"></div>
 
       {sectionOrder.map((block) => {
@@ -112,9 +146,6 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
               <h3 className="text-sm font-bold tracking-wide text-slate-200 uppercase">
                 {config.label}
               </h3>
-              <div className="ml-auto text-[10px] font-mono text-slate-600 bg-slate-900 px-2 py-1 rounded">
-                {habits.length}
-              </div>
             </div>
             
             <div className="grid gap-3">
@@ -122,10 +153,16 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
                 const isCompleted = dailyLog?.checklists?.includes(habit.id) || false;
                 const currentCount = dailyLog?.counters?.[habit.id] || 0;
 
+                // --- ADAPTASI NAMA (Dynamic Label) ---
+                let displayHabit = habit;
+                if (habit.id === "sholat_zuhur" && isFriday && isMale) {
+                    displayHabit = { ...habit, title: "Sholat Jumat" };
+                }
+
                 return (
                   <HabitItem
                     key={habit.id}
-                    habit={habit}
+                    habit={displayHabit}
                     userId={userData.uid}
                     date={date}
                     isCompleted={isCompleted}

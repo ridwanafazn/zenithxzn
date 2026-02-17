@@ -60,7 +60,7 @@ export default function LoginPage() {
         className="absolute left-6 top-8 z-20 flex items-center gap-2 rounded-full border border-white/5 bg-slate-900/50 px-4 py-2 text-xs font-medium text-slate-400 backdrop-blur-md transition-all hover:bg-slate-800 hover:text-white"
       >
         <Home className="h-3.5 w-3.5" />
-        Kembali ke Beranda
+        Beranda
       </Link>
 
       <div className="fixed inset-0 overflow-hidden pointer-events-none">

@@ -48,7 +48,7 @@ export default function OnboardingPage() {
               type="text"
               name="nickname"
               required
-              placeholder="Contoh: Ridwan"
+              placeholder="Contoh: Zenitsu"
               className="w-full rounded-lg bg-slate-950 border border-slate-700 p-3 text-white focus:border-emerald-500 focus:outline-none"
             />
           </div>
