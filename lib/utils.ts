@@ -208,15 +208,16 @@ export function analyzeZenithTrends(logs: any[], userData: { gender: string, isM
   const avgWajibCompliance = thisWeekLogs.length > 0 ? Math.round(totalWajibCompliance / thisWeekLogs.length) : 0;
 
   // 4. Cari Hari Terberat (Weakest Day based on Score)
-const dayScoreMap: Record<number, {total: number, count: number}> = { 
-  0: { total: 0, count: 0 }, 
-  1: { total: 0, count: 0 }, 
-  2: { total: 0, count: 0 }, 
-  3: { total: 0, count: 0 }, 
-  4: { total: 0, count: 0 }, 
-  5: { total: 0, count: 0 }, 
-  6: { total: 0, count: 0 } 
-};
+  const dayScoreMap: Record<number, {total: number, count: number}> = { 
+    0: { total: 0, count: 0 }, 
+    1: { total: 0, count: 0 }, 
+    2: { total: 0, count: 0 }, 
+    3: { total: 0, count: 0 }, 
+    4: { total: 0, count: 0 }, 
+    5: { total: 0, count: 0 }, 
+    6: { total: 0, count: 0 } 
+  };
+  
   logs.forEach(log => {
     const day = new Date(log.date).getDay();
     dayScoreMap[day].total += calculateDailyScore(log);
@@ -280,7 +281,12 @@ const dayScoreMap: Record<number, {total: number, count: number}> = {
  * NARRATIVE ENGINE V2: Context-Aware & Quality Focused
  */
 export function generateZenithInsight(analysis: any, userData: { gender: string, isMenstruating: boolean }) {
-  if (!analysis) return { text: "Mulai isi jurnalmu untuk melihat analisa.", color: "neutral" };
+  if (!analysis) return { 
+    text: "Mulai isi jurnalmu untuk melihat analisa.", 
+    title: "Mulai Perjalanan", 
+    color: "neutral", 
+    tip: "Isi jurnal hari ini." 
+  };
 
   const { avgScore, wajibCompliance, weakestDay, habitInDanger } = analysis;
 
@@ -334,5 +340,12 @@ export function generateZenithInsight(analysis: any, userData: { gender: string,
     };
   }
 
-  return { text: "Terus melangkah, Allah melihat setiap usahamu.", color: "neutral" };
+  // SCENARIO 6: DEFAULT (FALLBACK)
+  // Perbaikan: Menambahkan properti 'title' dan 'tip' agar sesuai tipe data TypeScript
+  return { 
+    text: "Terus melangkah, Allah melihat setiap usahamu.", 
+    title: "Tetap Istiqomah", 
+    color: "neutral",
+    tip: "Jaga niat karena Allah." 
+  };
 }
