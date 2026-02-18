@@ -7,19 +7,32 @@ import { revalidatePath } from "next/cache";
 
 // 1. AMBIL LOG HARIAN (Untuk Dashboard)
 export async function getDailyLog(uid: string, date: string) {
-  await connectDB();
-  const log = await DailyLog.findOne({ userId: uid, date: date }).lean();
-  if (!log) return null;
-  return JSON.parse(JSON.stringify(log));
+  try {
+    await connectDB();
+    const log = await DailyLog.findOne({ userId: uid, date: date }).lean();
+    
+    if (!log) return null;
+    
+    // Safety check: pastikan checklists dan counters ada
+    return JSON.parse(JSON.stringify({
+        ...log,
+        checklists: log.checklists || [],
+        counters: log.counters || {}
+    }));
+  } catch (error) {
+    console.error("Gagal getDailyLog:", error);
+    return null;
+  }
 }
 
 // 2. TOGGLE CHECKLIST (Untuk Habit Checkbox)
 export async function toggleHabit(uid: string, date: string, habitId: string) {
   try {
-    // Validasi Waktu Server (Mencegah kecurangan waktu)
+    // Validasi Waktu Server (Mencegah kecurangan waktu/sholat sebelum waktunya)
     const habitDef = MASTER_HABITS.find(h => h.id === habitId);
     if (habitDef?.startHour !== undefined) {
       const currentHour = new Date().getHours();
+      // Pastikan format date sama dengan server (YYYY-MM-DD)
       const serverDate = new Date().toISOString().split('T')[0];
       
       if (date === serverDate && currentHour < habitDef.startHour) {
@@ -28,9 +41,12 @@ export async function toggleHabit(uid: string, date: string, habitId: string) {
     }
 
     await connectDB();
+    
+    // Cari log yang ada
     const existingLog = await DailyLog.findOne({ userId: uid, date: date });
 
     if (!existingLog) {
+      // Skenario 1: Log belum ada, BUAT BARU
       await DailyLog.create({
         userId: uid,
         date: date,
@@ -38,11 +54,23 @@ export async function toggleHabit(uid: string, date: string, habitId: string) {
         counters: {},
       });
     } else {
-      const isChecked = existingLog.checklists.includes(habitId);
+      // Skenario 2: Log ada, UPDATE
+      // Safety: Pastikan array checklists terinisialisasi
+      const currentChecklists = existingLog.checklists || [];
+      const isChecked = currentChecklists.includes(habitId);
+
       if (isChecked) {
-        await DailyLog.updateOne({ _id: existingLog._id }, { $pull: { checklists: habitId } });
+        // Uncheck: Hapus dari array
+        await DailyLog.updateOne(
+            { _id: existingLog._id }, 
+            { $pull: { checklists: habitId } }
+        );
       } else {
-        await DailyLog.updateOne({ _id: existingLog._id }, { $addToSet: { checklists: habitId } });
+        // Check: Tambahkan ke array (hindari duplikat dengan addToSet)
+        await DailyLog.updateOne(
+            { _id: existingLog._id }, 
+            { $addToSet: { checklists: habitId } }
+        );
       }
     }
 
@@ -51,8 +79,8 @@ export async function toggleHabit(uid: string, date: string, habitId: string) {
     return { success: true };
 
   } catch (error) {
-    console.error("Gagal toggle:", error);
-    return { success: false };
+    console.error("Gagal toggle habit:", error);
+    return { success: false, message: "Gagal menyimpan data" };
   }
 }
 
@@ -60,10 +88,16 @@ export async function toggleHabit(uid: string, date: string, habitId: string) {
 export async function updateCounter(uid: string, date: string, habitId: string, value: number) {
   try {
     await connectDB();
+    
+    // PERBAIKAN UTAMA: Ganti 'new: true' dengan 'returnDocument: after'
     await DailyLog.findOneAndUpdate(
       { userId: uid, date: date },
       { $set: { [`counters.${habitId}`]: value } },
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { 
+        upsert: true, 
+        returnDocument: 'after', // <-- Syntax Mongoose Terbaru (Fix Deprecation Warning)
+        setDefaultsOnInsert: true 
+      }
     );
 
     revalidatePath("/dashboard");
@@ -80,7 +114,6 @@ export async function getHistoryLogs(uid: string, year: number) {
   try {
     await connectDB();
     
-    // Ambil data berdasarkan regex tahun (misal: "2025-")
     const logs = await DailyLog.find({
       userId: uid,
       date: { $regex: `^${year}` } 
