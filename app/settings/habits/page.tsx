@@ -17,7 +17,8 @@ import {
   Sunset, 
   CloudMoon, 
   CalendarDays,
-  Droplets // Icon untuk Haid
+  Droplets, // Icon Haid
+  Ban // Icon Terlarang/Restricted
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -39,9 +40,8 @@ export default function HabitMarketplacePage() {
   const [userData, setUserData] = useState<any>(null);
   const [draftHabits, setDraftHabits] = useState<Record<string, boolean>>({});
   
-  // STATE BARU: Mode Haid
+  // STATE: Mode Haid
   const [isMenstruating, setIsMenstruating] = useState(false);
-  
   const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
@@ -57,7 +57,6 @@ export default function HabitMarketplacePage() {
       }
       setUserData(dbUser);
       setDraftHabits(dbUser.preferences?.activeHabits || {});
-      // Load status haid
       setIsMenstruating(dbUser.preferences?.isMenstruating || false);
       
       setLoading(false);
@@ -76,32 +75,7 @@ export default function HabitMarketplacePage() {
     if (!userData) return;
     setIsSaving(true);
     
-    // Kita simpan activeHabits DAN status isMenstruating
-    // Note: Kita perlu update actions/user.ts sedikit nanti untuk mengakomodir ini, 
-    // tapi karena activeHabits di User.ts pakai 'Mixed', kita bisa selipkan di preferences object jika mau cara cepat,
-    // atau panggil update terpisah. 
-    // AGAR AMAN: Kita masukkan isMenstruating ke dalam payload preferences yang dikirim
-    
-    // Modifikasi sementara: Kita kirim object preferences lengkap
-    const preferencesPayload = {
-        activeHabits: draftHabits,
-        isMenstruating: isMenstruating
-    };
-
-    // Panggil fungsi save yang sudah kita modifikasi (lihat instruksi di bawah)
-    // Untuk sekarang kita pakai saveAllHabits yang ada, tapi logic backend perlu dicek.
-    // Kita asumsikan saveAllHabits menerima preferences object atau kita kirim mixed.
-    
-    // FIX: Mari kita kirim data khusus. 
-    // Karena action saveAllHabits di backend hanya update "preferences.activeHabits", 
-    // kita perlu pastikan backend bisa update isMenstruating juga.
-    // Tapi untuk UI ini berjalan, kita kirimkan habit dulu.
-    
-    // PERBAIKAN LOGIC SERVER ACTION (Client Side Trick):
-    // Kita akan passing 'isMenstruating' sebagai properti khusus di dalam activeHabits sementara 
-    // (JIKA backend belum support update terpisah), TAPI idealnya kita update backend.
-    
-    // Mari kita asumsikan backend akan kita update setelah ini.
+    // Kirim data habit + status menstruasi ke server
     await saveAllHabits(userData.uid, { ...draftHabits, _isMenstruating: isMenstruating });
     
     setTimeout(() => {
@@ -165,13 +139,12 @@ export default function HabitMarketplacePage() {
                             </h3>
                             <p className="text-xs text-slate-500 leading-relaxed mt-1">
                                 {isMenstruating 
-                                    ? "Sholat wajib akan disembunyikan. Fokus pada dzikir & shalawat." 
+                                    ? "Sholat & Puasa dinonaktifkan. Fokus dzikir & tilawah." 
                                     : "Saya sedang dalam masa suci."}
                             </p>
                         </div>
                     </div>
                     
-                    {/* Toggle Pink */}
                     <button
                         onClick={() => setIsMenstruating(!isMenstruating)}
                         className={cn(
@@ -197,13 +170,7 @@ export default function HabitMarketplacePage() {
             const Icon = config.icon;
 
             return (
-                <section key={block} className={cn("space-y-3 animate-scale-in transition-opacity", 
-                    // Redupkan section sholat jika sedang haid
-                    isMenstruating && (block === 'subuh' || block === 'pagi_siang' || block === 'sore' || block === 'maghrib_isya') 
-                        ? "opacity-50 grayscale pointer-events-none" 
-                        : "opacity-100"
-                )}>
-                    {/* ... (KODE SAMA SEPERTI SEBELUMNYA) ... */}
+                <section key={block} className="space-y-3 animate-scale-in">
                     <div className="flex items-center gap-2 px-2">
                         <Icon className={cn("h-4 w-4", config.color)} />
                         <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">
@@ -214,45 +181,88 @@ export default function HabitMarketplacePage() {
                     <div className="glass-panel overflow-hidden rounded-2xl">
                         {habits.map((habit, index) => {
                             const isWajib = habit.category === "wajib";
+                            
+                            // --- LOGIKA BARU: FILTER HAID ---
+                            // Habit dilarang jika: Sedang Haid AND Habit bersifat Fisik (Sholat/Puasa)
+                            const isRestrictedByPeriod = isMenstruating && habit.isPhysical;
+                            
+                            // Habit aktif jika: Wajib, ATAU ada di draft
                             const isActive = isWajib ? true : draftHabits[habit.id] === true;
                             const isLast = index === habits.length - 1;
+
+                            // Handler Click
+                            const handleClick = () => {
+                                // Jangan lakukan apa-apa jika Wajib atau Sedang Haid (Restricted)
+                                if (isWajib || isRestrictedByPeriod) return;
+                                handleToggleLocal(habit.id);
+                            };
 
                             return (
                                 <div 
                                     key={habit.id} 
-                                    onClick={() => !isWajib && handleToggleLocal(habit.id)}
+                                    onClick={handleClick}
                                     className={cn(
                                         "relative flex items-center justify-between p-4 transition-all duration-200",
                                         !isLast && "border-b border-white/5",
-                                        isWajib ? "cursor-default bg-slate-900/40" : "cursor-pointer hover:bg-white/5",
-                                        isActive && !isWajib ? "bg-emerald-900/10" : ""
+                                        
+                                        // Styling Kondisional
+                                        isRestrictedByPeriod 
+                                            ? "bg-slate-950/50 cursor-not-allowed grayscale-[0.5]" // Tampilan Haid
+                                            : isWajib 
+                                                ? "cursor-default bg-slate-900/40" 
+                                                : "cursor-pointer hover:bg-white/5",
+                                        
+                                        isActive && !isWajib && !isRestrictedByPeriod ? "bg-emerald-900/10" : ""
                                     )}
                                 >
                                     <div className="flex flex-col gap-1 pr-4">
                                         <span className={cn(
                                             "font-medium transition-colors",
+                                            isRestrictedByPeriod ? "text-slate-600 line-through decoration-pink-500/50" : // Teks Coret jika Haid
                                             isActive ? "text-slate-200" : "text-slate-500",
-                                            isWajib && "text-amber-400/80"
+                                            isWajib && !isRestrictedByPeriod && "text-amber-400/80"
                                         )}>
                                             {habit.title}
                                         </span>
                                         <div className="flex items-center gap-2">
-                                            <span className={cn(
-                                                "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded",
-                                                isWajib 
-                                                    ? "bg-amber-950/30 text-amber-500 border border-amber-900/30" 
-                                                    : "bg-slate-800 text-slate-500"
-                                            )}>
-                                                {isWajib ? "Wajib" : "Sunnah"}
-                                            </span>
+                                            {isRestrictedByPeriod ? (
+                                                <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-pink-900/20 text-pink-500 border border-pink-900/30">
+                                                    Libur Haid
+                                                </span>
+                                            ) : (
+                                                <span className={cn(
+                                                    "text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded",
+                                                    isWajib 
+                                                        ? "bg-amber-950/30 text-amber-500 border border-amber-900/30" 
+                                                        : "bg-slate-800 text-slate-500"
+                                                )}>
+                                                    {isWajib ? "Wajib" : "Sunnah"}
+                                                </span>
+                                            )}
                                         </div>
                                     </div>
                                     
-                                    {isWajib ? (
-                                        <div className="p-2 text-slate-600"><Lock className="h-4 w-4" /></div>
+                                    {/* --- LOGIKA ICON KANAN --- */}
+                                    {isRestrictedByPeriod ? (
+                                         // Icon Larangan / Tetesan Air
+                                         <div className="p-2 text-pink-500/40">
+                                            <Droplets className="h-4 w-4" />
+                                         </div>
+                                    ) : isWajib ? (
+                                        // Icon Gembok Wajib
+                                        <div className="p-2 text-slate-600">
+                                            <Lock className="h-4 w-4" />
+                                        </div>
                                     ) : (
-                                        <div className={cn("relative h-6 w-11 shrink-0 rounded-full transition-colors", isActive ? "bg-emerald-500" : "bg-slate-700")}>
-                                            <span className={cn("absolute top-1 block h-4 w-4 transform rounded-full bg-white transition", isActive ? "translate-x-6" : "translate-x-1")} />
+                                        // Toggle Switch Normal
+                                        <div className={cn(
+                                            "relative h-6 w-11 shrink-0 rounded-full transition-colors", 
+                                            isActive ? "bg-emerald-500" : "bg-slate-700"
+                                        )}>
+                                            <span className={cn(
+                                                "absolute top-1 block h-4 w-4 transform rounded-full bg-white transition", 
+                                                isActive ? "translate-x-6" : "translate-x-1"
+                                            )} />
                                         </div>
                                     )}
                                 </div>
@@ -274,9 +284,8 @@ export default function HabitMarketplacePage() {
             "hover:scale-105 hover:shadow-emerald-500/40 active:scale-95"
           )}
         >
-          {/* ... (Tombol Save Sama) ... */}
           {isSaving ? <Loader2 className="h-5 w-5 animate-spin" /> : <Save className="h-5 w-5" />}
-          <span>Simpan</span>
+          <span>Simpan Perubahan</span>
         </button>
       </div>
     </div>

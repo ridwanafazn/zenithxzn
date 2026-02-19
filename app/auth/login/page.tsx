@@ -3,9 +3,9 @@
 import { useState, useEffect } from "react";
 import { signInWithPopup, onAuthStateChanged } from "firebase/auth";
 import { auth, googleProvider } from "@/lib/firebase";
-import { syncUser } from "@/actions/auth"; 
+import { syncUser, createSession } from "@/actions/auth"; // Import createSession
 import { useRouter } from "next/navigation";
-import { Chrome, Loader2, Sparkles, ArrowRight, Home, ShieldCheck } from "lucide-react";
+import { Chrome, Loader2, Sparkles, ArrowRight, Home } from "lucide-react";
 import Link from "next/link";
 
 export default function LoginPage() {
@@ -14,14 +14,31 @@ export default function LoginPage() {
   const [isCheckingSession, setIsCheckingSession] = useState(true); 
   const [error, setError] = useState("");
 
+  // --- LOGIKA ANTI LOOPING ---
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+    // Listener: Setiap kali status login Firebase berubah
+    const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (user) {
-        router.replace("/dashboard");
+        // User ada di Firebase (Client Side)
+        try {
+          // 1. Ambil Token terbaru
+          const token = await user.getIdToken();
+          
+          // 2. Lapor ke Server: "Tolong buatkan cookie sesi!"
+          await createSession(token);
+          
+          // 3. Setelah cookie jadi, baru kita masuk Dashboard
+          router.replace("/dashboard");
+        } catch (err) {
+          console.error("Gagal auto-sync session:", err);
+          setIsCheckingSession(false);
+        }
       } else {
+        // User benar-benar tidak ada
         setIsCheckingSession(false);
       }
     });
+
     return () => unsubscribe();
   }, [router]);
 
@@ -29,15 +46,25 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
+      // 1. Popup Login Google
       const result = await signInWithPopup(auth, googleProvider);
+      const token = await result.user.getIdToken();
+
+      // 2. Buat Session Cookie (PENTING AGAR TIDAK DITENDANG MIDDLEWARE)
+      await createSession(token);
+
+      // 3. Simpan data ke MongoDB
       await syncUser({
         uid: result.user.uid,
         email: result.user.email,
         displayName: result.user.displayName,
         photoURL: result.user.photoURL,
       });
+
+      // 4. Masuk
       router.push("/dashboard");
     } catch (err: any) {
+      console.error(err);
       setError("Gagal masuk. Coba lagi ya.");
       setLoading(false);
     }
@@ -54,7 +81,6 @@ export default function LoginPage() {
   return (
     <main className="relative flex min-h-screen items-center justify-center overflow-hidden bg-slate-950 px-4 text-slate-50">
       
-      {/* Tombol Back to Landing (New UX) */}
       <Link 
         href="/" 
         className="absolute left-6 top-8 z-20 flex items-center gap-2 rounded-full border border-white/5 bg-slate-900/50 px-4 py-2 text-xs font-medium text-slate-400 backdrop-blur-md transition-all hover:bg-slate-800 hover:text-white"

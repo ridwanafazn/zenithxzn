@@ -64,7 +64,7 @@ export default function LandingPage() {
             href={user ? "/dashboard" : "/auth/login"}
             className="group relative flex h-14 items-center justify-center gap-3 rounded-2xl bg-white px-8 text-base font-bold text-slate-950 transition-all hover:bg-slate-200 hover:scale-105 active:scale-95 shadow-[0_0_20px_rgba(255,255,255,0.15)]"
           >
-            {loading ? "Memuat..." : user ? "Dashboard" : "Mulai Gratis"}
+            {loading ? "Memuat..." : user ? "Dashboard" : "Mulai Sekarang"}
             <ArrowRight className="h-5 w-5 transition-transform group-hover:translate-x-1" />
           </Link>
           

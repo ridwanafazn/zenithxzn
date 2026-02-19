@@ -4,15 +4,24 @@ export interface IUser extends Document {
   uid: string;
   email: string;
   displayName?: string;
-  username?: string; // Field Baru
+  username?: string;
   photoURL?: string;
   gender?: "male" | "female";
   onboardingCompleted: boolean;
+  
+  // --- BARU: Lokasi untuk kalkulasi Maghrib ---
+  location?: {
+    lat: number;
+    lng: number;
+    city?: string; // Opsional, untuk display di UI
+  };
+
   preferences: {
     isMenstruating: boolean;
     activeHabits: Record<string, any>; 
   };
-  hijriOffset?: number; // Tambahan untuk kalibrasi waktu
+  
+  hijriOffset?: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -23,18 +32,24 @@ const UserSchema = new Schema<IUser>(
     email: { type: String, required: true },
     displayName: { type: String },
     
-    // USN CONFIG: Unik, Lowercase, dan Trim spasi
     username: { 
         type: String, 
         unique: true, 
         lowercase: true, 
         trim: true,
-        sparse: true // Penting: Mengizinkan nilai null/undefined untuk user lama
+        sparse: true
     },
 
     photoURL: { type: String },
     gender: { type: String, enum: ["male", "female"], default: "male" },
     onboardingCompleted: { type: Boolean, default: false },
+
+    // --- STRUKTUR BARU ---
+    location: {
+      lat: { type: Number },
+      lng: { type: Number },
+      city: { type: String }
+    },
 
     preferences: {
       isMenstruating: { type: Boolean, default: false },
@@ -53,6 +68,7 @@ const UserSchema = new Schema<IUser>(
   }
 );
 
+// Prevent Overwrite Model
 const User: Model<IUser> = mongoose.models.User || mongoose.model<IUser>("User", UserSchema);
 
 export default User;

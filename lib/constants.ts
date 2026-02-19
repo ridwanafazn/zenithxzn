@@ -2,6 +2,9 @@ export type HabitCategory = "wajib" | "sunnah" | "custom";
 export type HabitType = "checkbox" | "counter";
 export type TimeBlock = "sepertiga_malam" | "subuh" | "pagi_siang" | "sore" | "maghrib_isya" | "malam_tidur" | "weekly" | "monthly" | "yearly";
 
+// --- NEW: Kategori Lensa Insight ---
+export type InsightScope = "global" | "wajib" | "rawatib" | "qiyam" | "duha" | "quran" | "puasa";
+
 export interface HabitDefinition {
   id: string;
   title: string;
@@ -13,18 +16,18 @@ export interface HabitDefinition {
   unit?: string;
   isRemovable: boolean;
   
-  // Metadata Analisis Cerdas (Updated)
-  isPhysical: boolean; // true untuk sholat/puasa (haram saat haid)
-  isVerbal: boolean;   // true untuk dzikir/bacaan (tetap dianjurkan saat haid)
+  // Metadata Analisis Cerdas
+  isPhysical: boolean; 
+  isVerbal: boolean;   
   
-  // NEW: Sistem Pembobotan Kualitas
-  weight: number;       // 10 (Wajib), 3 (Muakkad/Rawatib), 1 (Ghairu Muakkad/Sunnah)
-  tags?: string[];      // ['rawatib', 'quran', 'sedekah', 'dzikir']
+  // Sistem Pembobotan Kualitas
+  weight: number;      
+  tags?: string[];      
 
-  // NEW: Aturan Waktu Dinamis (Time Engine)
-  availableDays?: number[]; // [1 (Senin), 4 (Kamis)] -> Hanya muncul hari Masehi tertentu
-  hijriDates?: number[];    // [13, 14, 15] -> Hanya muncul tanggal Hijriyah tertentu
-  hijriMonth?: number;      // 9 (Ramadhan) -> Hanya muncul bulan Hijriyah tertentu
+  // Aturan Waktu Dinamis
+  availableDays?: number[]; 
+  hijriDates?: number[];    
+  hijriMonth?: number;      
 }
 
 export const MASTER_HABITS: HabitDefinition[] = [
@@ -66,7 +69,7 @@ export const MASTER_HABITS: HabitDefinition[] = [
   { id: "sholat_isya", title: "Sholat Isya", category: "wajib", type: "checkbox", timeBlock: "malam_tidur", startHour: 19, isRemovable: false, isPhysical: true, isVerbal: false, weight: 10, tags: ['wajib'] },
   { id: "badiyah_isya", title: "Ba'diyah Isya", category: "sunnah", type: "checkbox", timeBlock: "malam_tidur", startHour: 19, isRemovable: true, isPhysical: true, isVerbal: false, weight: 3, tags: ['rawatib', 'muakkad'] },
   
-  // TARAWIH & WITIR: Hanya muncul di Ramadhan (hijriMonth = 9)
+  // TARAWIH & WITIR
   { id: "sholat_tarawih", title: "Sholat Tarawih", category: "sunnah", type: "checkbox", timeBlock: "malam_tidur", startHour: 19, isRemovable: true, isPhysical: true, isVerbal: false, weight: 5, tags: ['qiyam'], hijriMonth: 9 },
   { id: "sholat_witir", title: "Sholat Witir", category: "sunnah", type: "checkbox", timeBlock: "malam_tidur", startHour: 19, isRemovable: true, isPhysical: true, isVerbal: false, weight: 5, tags: ['qiyam'] },
   
@@ -80,7 +83,7 @@ export const MASTER_HABITS: HabitDefinition[] = [
   // PERIODIC
   { id: "puasa_senin", title: "Puasa Senin", category: "sunnah", type: "checkbox", timeBlock: "weekly", startHour: 0, isRemovable: true, isPhysical: true, isVerbal: false, weight: 5, tags: ['puasa'], availableDays: [1] },
   { id: "puasa_kamis", title: "Puasa Kamis", category: "sunnah", type: "checkbox", timeBlock: "weekly", startHour: 0, isRemovable: true, isPhysical: true, isVerbal: false, weight: 5, tags: ['puasa'], availableDays: [4] },
-  { id: "jumat_alkahfi", title: "Baca Al-Kahfi", category: "sunnah", type: "checkbox", timeBlock: "weekly", startHour: 0, isRemovable: true, isPhysical: false, isVerbal: true, weight: 3, tags: ['quran'], availableDays: [5] }, // 5 = Jumat
+  { id: "jumat_alkahfi", title: "Baca Al-Kahfi", category: "sunnah", type: "checkbox", timeBlock: "weekly", startHour: 0, isRemovable: true, isPhysical: false, isVerbal: true, weight: 3, tags: ['quran'], availableDays: [5] }, 
   { id: "puasa_ayyamul_bidh", title: "Puasa Ayyamul Bidh", category: "sunnah", type: "checkbox", timeBlock: "monthly", startHour: 0, isRemovable: true, isPhysical: true, isVerbal: false, weight: 5, tags: ['puasa'], hijriDates: [13, 14, 15] },
 ];
 
@@ -89,3 +92,14 @@ export const HIJRI_MONTH_NAMES = [
   "Jumadil Awal", "Jumadil Akhir", "Rajab", "Sya'ban",
   "Ramadhan", "Syawal", "Dzulqa'dah", "Dzulhijjah"
 ];
+
+// --- NEW: MAPPING KATEGORI UNTUK FILTER HISTORY ---
+export const INSIGHT_GROUPS: Record<InsightScope, string[]> = {
+    global: [], // Kosong = Semua
+    wajib: ["sholat_subuh", "sholat_zuhur", "sholat_asar", "sholat_maghrib", "sholat_isya"],
+    rawatib: ["qobliyah_subuh", "qobliyah_zuhur", "badiyah_zuhur", "qobliyah_asar", "qobliyah_maghrib", "badiyah_maghrib", "qobliyah_isya", "badiyah_isya"],
+    qiyam: ["tahajjud", "sholat_witir", "sholat_tarawih"],
+    duha: ["sholat_dhuha", "syuruq"],
+    quran: ["baca_waqiah", "baca_arrahman", "baca_assajdah", "baca_yasin", "baca_almulk", "jumat_alkahfi", "tilawah_target"],
+    puasa: ["sahur", "buka_puasa", "puasa_senin", "puasa_kamis", "puasa_ayyamul_bidh"]
+};

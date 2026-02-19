@@ -4,12 +4,17 @@ import { useState, useEffect } from "react";
 import { auth } from "@/lib/firebase";
 import { submitOnboarding } from "@/actions/user";
 import { useRouter } from "next/navigation";
-import { Loader2 } from "lucide-react";
+import { Loader2, MapPin, CheckCircle } from "lucide-react"; // Tambah Icon
+import { getCityFromCoords } from "@/lib/utils"; // Import Utils Baru
 
 export default function OnboardingPage() {
   const [uid, setUid] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+
+  // --- State Lokasi ---
+  const [location, setLocation] = useState<{lat: number, lng: number, city: string} | null>(null);
+  const [locLoading, setLocLoading] = useState(false);
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
@@ -22,6 +27,34 @@ export default function OnboardingPage() {
     });
     return () => unsubscribe();
   }, [router]);
+
+  // --- Handler Deteksi Lokasi Browser ---
+  const handleDetectLocation = () => {
+    if (!navigator.geolocation) {
+        alert("Browser tidak mendukung geolokasi.");
+        return;
+    }
+
+    setLocLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+        async (position) => {
+            const lat = position.coords.latitude;
+            const lng = position.coords.longitude;
+            
+            // Ambil Nama Kota (Reverse Geo)
+            const cityName = await getCityFromCoords(lat, lng);
+            
+            setLocation({ lat, lng, city: cityName });
+            setLocLoading(false);
+        },
+        (error) => {
+            console.error("Gagal deteksi:", error);
+            alert("Gagal mendeteksi lokasi. Pastikan GPS aktif dan izin diberikan.");
+            setLocLoading(false);
+        }
+    );
+  };
 
   if (loading) {
     return (
@@ -41,6 +74,15 @@ export default function OnboardingPage() {
 
         <form action={submitOnboarding} className="space-y-6 bg-slate-900/50 p-6 rounded-2xl border border-slate-800">
           <input type="hidden" name="uid" value={uid} />
+          
+          {/* --- Hidden Inputs untuk Kirim Data Lokasi ke Server --- */}
+          {location && (
+            <>
+                <input type="hidden" name="lat" value={location.lat} />
+                <input type="hidden" name="lng" value={location.lng} />
+                <input type="hidden" name="city" value={location.city} />
+            </>
+          )}
           
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-300">Siapa nama panggilanmu?</label>
@@ -71,6 +113,44 @@ export default function OnboardingPage() {
                   <span className="mt-1 text-sm font-medium">Perempuan</span>
                 </div>
               </label>
+            </div>
+          </div>
+
+          {/* --- Bagian Lokasi Baru --- */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-300">Lokasi</label>
+            <div className="rounded-xl border border-slate-700 bg-slate-950 p-4">
+                {location ? (
+                    <div className="flex items-center gap-3 text-emerald-400">
+                        <CheckCircle className="h-5 w-5" />
+                        <div>
+                            <p className="text-sm font-semibold">{location.city}</p>
+                            <p className="text-xs text-emerald-400/60">Lokasi berhasil didapat</p>
+                        </div>
+                        <button 
+                            type="button" 
+                            onClick={handleDetectLocation}
+                            className="ml-auto text-xs underline text-slate-500 hover:text-white"
+                        >
+                            Ubah
+                        </button>
+                    </div>
+                ) : (
+                    <div className="flex items-center justify-between">
+                        <div className="text-xs text-slate-500">
+                            Waktu shalat.
+                        </div>
+                        <button
+                            type="button"
+                            onClick={handleDetectLocation}
+                            disabled={locLoading}
+                            className="flex items-center gap-2 rounded-lg bg-slate-800 px-3 py-2 text-xs font-medium text-white transition hover:bg-slate-700 disabled:opacity-50"
+                        >
+                            {locLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <MapPin className="h-3 w-3" />}
+                            {locLoading ? "Mendeteksi..." : "Deteksi Otomatis"}
+                        </button>
+                    </div>
+                )}
             </div>
           </div>
 

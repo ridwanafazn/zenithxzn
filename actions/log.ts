@@ -2,10 +2,10 @@
 
 import connectDB from "@/lib/db";
 import DailyLog from "@/lib/models/DailyLog";
-import { MASTER_HABITS } from "@/lib/constants";
+// Hapus MASTER_HABITS import jika tidak dipakai untuk validasi jam server lagi
 import { revalidatePath } from "next/cache";
 
-// 1. AMBIL LOG HARIAN (Untuk Dashboard)
+// 1. AMBIL LOG HARIAN
 export async function getDailyLog(uid: string, date: string) {
   try {
     await connectDB();
@@ -13,7 +13,6 @@ export async function getDailyLog(uid: string, date: string) {
     
     if (!log) return null;
     
-    // Safety check: pastikan checklists dan counters ada
     return JSON.parse(JSON.stringify({
         ...log,
         checklists: log.checklists || [],
@@ -25,54 +24,41 @@ export async function getDailyLog(uid: string, date: string) {
   }
 }
 
-// 2. TOGGLE CHECKLIST (Untuk Habit Checkbox)
+// 2. TOGGLE CHECKLIST
 export async function toggleHabit(uid: string, date: string, habitId: string) {
   try {
-    // Validasi Waktu Server (Mencegah kecurangan waktu/sholat sebelum waktunya)
-    const habitDef = MASTER_HABITS.find(h => h.id === habitId);
-    if (habitDef?.startHour !== undefined) {
-      const currentHour = new Date().getHours();
-      // Pastikan format date sama dengan server (YYYY-MM-DD)
-      const serverDate = new Date().toISOString().split('T')[0];
-      
-      if (date === serverDate && currentHour < habitDef.startHour) {
-         return { success: false, message: "Belum masuk waktunya" };
-      }
-    }
+    // --- V2 CHANGE: HAPUS VALIDASI WAKTU SERVER (TIMEZONE BUG) ---
+    // Alasan: Server Vercel pakai UTC. Validasi "currentHour < startHour"
+    // akan memblokir user di WIB yang sholat Subuh jam 04:30 (Server masih jam 21:30 kemarin).
+    // Validasi waktu sebaiknya dilakukan di UI (Client Side) untuk UX, 
+    // Server trust client untuk habit log (kecuali aplikasi kompetitif/ranking).
+    
+    if (!uid) throw new Error("Unauthorized");
 
     await connectDB();
     
-    // Cari log yang ada
-    const existingLog = await DailyLog.findOne({ userId: uid, date: date });
-
-    if (!existingLog) {
-      // Skenario 1: Log belum ada, BUAT BARU
-      await DailyLog.create({
-        userId: uid,
-        date: date,
-        checklists: [habitId],
-        counters: {},
-      });
+    // Gunakan Atomic Update (findOneAndUpdate with upsert) untuk race-condition safety
+    // Ini menggabungkan logika "Create if not exists" dan "Update if exists"
+    
+    // Langkah 1: Cek status saat ini dulu (sayangnya MongoDB belum punya toggle operator native sederhana)
+    const existingLog = await DailyLog.findOne({ userId: uid, date: date }).select("checklists");
+    
+    let updateOperation;
+    const currentChecklists = existingLog?.checklists || [];
+    
+    if (currentChecklists.includes(habitId)) {
+       // Uncheck
+       updateOperation = { $pull: { checklists: habitId } };
     } else {
-      // Skenario 2: Log ada, UPDATE
-      // Safety: Pastikan array checklists terinisialisasi
-      const currentChecklists = existingLog.checklists || [];
-      const isChecked = currentChecklists.includes(habitId);
-
-      if (isChecked) {
-        // Uncheck: Hapus dari array
-        await DailyLog.updateOne(
-            { _id: existingLog._id }, 
-            { $pull: { checklists: habitId } }
-        );
-      } else {
-        // Check: Tambahkan ke array (hindari duplikat dengan addToSet)
-        await DailyLog.updateOne(
-            { _id: existingLog._id }, 
-            { $addToSet: { checklists: habitId } }
-        );
-      }
+       // Check
+       updateOperation = { $addToSet: { checklists: habitId } };
     }
+
+    await DailyLog.updateOne(
+        { userId: uid, date: date },
+        updateOperation,
+        { upsert: true } // Buat dokumen baru jika tanggal ini belum ada log
+    );
 
     revalidatePath("/dashboard");
     revalidatePath("/history"); 
@@ -84,24 +70,24 @@ export async function toggleHabit(uid: string, date: string, habitId: string) {
   }
 }
 
-// 3. UPDATE COUNTER (Untuk Dzikir/Target Angka)
+// 3. UPDATE COUNTER
 export async function updateCounter(uid: string, date: string, habitId: string, value: number) {
   try {
+    if (!uid) throw new Error("Unauthorized");
+    
     await connectDB();
     
-    // PERBAIKAN UTAMA: Ganti 'new: true' dengan 'returnDocument: after'
     await DailyLog.findOneAndUpdate(
       { userId: uid, date: date },
       { $set: { [`counters.${habitId}`]: value } },
       { 
         upsert: true, 
-        returnDocument: 'after', // <-- Syntax Mongoose Terbaru (Fix Deprecation Warning)
+        returnDocument: 'after',
         setDefaultsOnInsert: true 
       }
     );
 
     revalidatePath("/dashboard");
-    revalidatePath("/history");
     return { success: true };
   } catch (error) {
     console.error("Gagal update counter:", error);
@@ -109,11 +95,10 @@ export async function updateCounter(uid: string, date: string, habitId: string, 
   }
 }
 
-// 4. AMBIL HISTORY TAHUNAN (Untuk Halaman History/Heatmap)
+// 4. AMBIL HISTORY TAHUNAN
 export async function getHistoryLogs(uid: string, year: number) {
   try {
     await connectDB();
-    
     const logs = await DailyLog.find({
       userId: uid,
       date: { $regex: `^${year}` } 
@@ -121,7 +106,6 @@ export async function getHistoryLogs(uid: string, year: number) {
 
     return JSON.parse(JSON.stringify(logs));
   } catch (error) {
-    console.error("Gagal ambil history:", error);
     return [];
   }
 }

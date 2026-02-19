@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { TrendingUp, AlertCircle, Lightbulb, BarChart2 } from "lucide-react";
+import { TrendingUp, AlertCircle, Lightbulb, BarChart2, Tag } from "lucide-react"; // Import Tag
 
 interface InsightProps {
     insight: {
@@ -11,12 +11,12 @@ interface InsightProps {
         tip: string;
     };
     trends?: any;
+    categoryLabel?: string; // Tambahan prop
 }
 
-export default function HistoryInsights({ insight, trends }: InsightProps) {
+export default function HistoryInsights({ insight, trends, categoryLabel = "Global" }: InsightProps) {
     if (!insight) return null;
 
-    // Mapping warna ke style CSS
     const colorStyles: Record<string, any> = {
         positive: {
             bg: "bg-emerald-950/20",
@@ -68,18 +68,23 @@ export default function HistoryInsights({ insight, trends }: InsightProps) {
             "relative overflow-hidden rounded-3xl border p-6 backdrop-blur-md transition-all shadow-xl",
             style.bg, style.border, style.shadow
         )}>
-            {/* Glow Line Indicator */}
             <div className={cn("absolute top-0 left-0 h-full w-1.5", style.bar)} />
 
             <div className="flex flex-col md:flex-row md:items-start gap-5">
-                {/* Icon Box */}
                 <div className={cn("shrink-0 rounded-2xl p-4 border w-fit", style.iconBg, style.iconText, style.border)}>
                     <Icon className="h-8 w-8" />
                 </div>
 
-                {/* Content */}
                 <div className="flex-1 space-y-3">
                     <div>
+                        {/* Kategori Badge */}
+                        <div className="flex items-center gap-2 mb-2">
+                             <div className="inline-flex items-center gap-1 rounded-full bg-white/5 px-2 py-0.5 text-[10px] font-medium text-slate-400 border border-white/5 uppercase tracking-wide">
+                                <Tag className="h-3 w-3" />
+                                {categoryLabel}
+                             </div>
+                        </div>
+
                         <h3 className={cn("text-lg font-bold mb-1", style.title)}>
                             {insight.title}
                         </h3>
@@ -88,14 +93,12 @@ export default function HistoryInsights({ insight, trends }: InsightProps) {
                         </p>
                     </div>
 
-                    {/* Tip Box */}
                     <div className="inline-flex items-center gap-2 rounded-lg bg-black/20 px-3 py-2 text-xs text-slate-400 border border-white/5">
                         <Lightbulb className="h-3 w-3 text-yellow-500" />
                         <span><span className="font-bold text-slate-300">Saran:</span> {insight.tip}</span>
                     </div>
                 </div>
 
-                {/* Mini Stats (Weekly Delta) - Optional */}
                 {trends && trends.wajibCompliance !== undefined && (
                     <div className="hidden md:flex flex-col items-end justify-center pl-4 border-l border-white/5">
                         <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold mb-1">

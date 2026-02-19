@@ -4,6 +4,7 @@ import { auth } from "@/lib/firebase";
 import { signOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useMemo } from "react";
+import FloatingFeedbackButton from "@/components/FloatingFeedbackButton";
 import { 
   LogOut, 
   User as UserIcon, 
@@ -515,7 +516,7 @@ export default function DashboardPage() {
             </div>
         </div>
       )}
-
+        <FloatingFeedbackButton />
     </main>
   );
 }

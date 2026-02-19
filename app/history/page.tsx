@@ -9,10 +9,11 @@ import {
     calculateStreak, 
     analyzeZenithTrends, 
     generateZenithInsight,
-    calculateDailyScore // IMPORT BARU
+    calculateDailyScore 
 } from "@/lib/utils"; 
+import { InsightScope } from "@/lib/constants";
 import Heatmap from "@/components/tracker/Heatmap"; 
-import HistoryInsights from "@/components/tracker/HistoryInsights"; // IMPORT BARU
+import HistoryInsights from "@/components/tracker/HistoryInsights";
 import { 
   ArrowLeft, 
   Flame, 
@@ -20,7 +21,8 @@ import {
   CalendarDays, 
   Loader2, 
   Target,
-  AlertCircle
+  AlertCircle,
+  Filter
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -31,6 +33,9 @@ export default function HistoryPage() {
   const [logs, setLogs] = useState<any[]>([]);
   const [userData, setUserData] = useState<any>(null);
   const [year] = useState(new Date().getFullYear());
+  
+  // --- STATE BARU: PILIHAN LENSA KATEGORI ---
+  const [selectedCategory, setSelectedCategory] = useState<InsightScope>("global");
 
   useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged(async (currentUser) => {
@@ -52,7 +57,7 @@ export default function HistoryPage() {
     return () => unsubscribe();
   }, [router, year]);
 
-  // --- MESIN ANALISIS DATA ---
+  // --- MESIN ANALISIS DATA (CONTEXT AWARE) ---
   const analytics = useMemo(() => {
     if (!logs || logs.length === 0 || !userData) {
         return {
@@ -64,17 +69,18 @@ export default function HistoryPage() {
         };
     }
 
-    // 1. Siapkan Data Dasar untuk Heatmap & Streak
-    const heatmapData: Record<string, number> = {}; // Isinya sekarang SKOR, bukan Count
+    // 1. Siapkan Data Dasar untuk Heatmap (Sesuai Kategori)
+    const heatmapData: Record<string, number> = {}; 
     const loggedDates: string[] = [];
     const habitFrequency: Record<string, number> = {};
 
     logs.forEach((log) => {
-      // HITUNG SKOR KUALITAS
-      const score = calculateDailyScore(log);
+      // HITUNG SKOR BERDASARKAN KATEGORI YG DIPILIH
+      const score = calculateDailyScore(log, selectedCategory);
       heatmapData[log.date] = score;
       
-      if (log.checklists && log.checklists.length > 0) loggedDates.push(log.date);
+      // Streak Logic: Hanya hitung jika skor > 0 (artinya ada aktifitas di kategori ini)
+      if (score > 0) loggedDates.push(log.date);
       
       log.checklists?.forEach((habitId: string) => {
         habitFrequency[habitId] = (habitFrequency[habitId] || 0) + 1;
@@ -83,25 +89,25 @@ export default function HistoryPage() {
 
     const streak = calculateStreak(loggedDates);
 
-    // 2. Cari Top Habit
+    // 2. Cari Top Habit (Global, tidak terpengaruh filter agar tetap informatif)
     const sortedHabits = Object.entries(habitFrequency).sort((a, b) => b[1] - a[1]);
     const topHabitRaw = sortedHabits.length > 0 ? sortedHabits[0][0] : "-";
     const topHabit = topHabitRaw.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
 
-    // 3. JALANKAN ANALISIS MENDALAM (Deep Analysis)
+    // 3. JALANKAN ANALISIS MENDALAM (Context Aware)
     const trends = analyzeZenithTrends(logs, {
         gender: userData.gender || 'male',
         isMenstruating: userData.preferences?.isMenstruating || false
-    });
+    }, selectedCategory); // Pass category
 
-    // 4. GENERATE NARASI (Storytelling)
+    // 4. GENERATE NARASI (Context Aware)
     const insight = generateZenithInsight(trends, {
         gender: userData.gender || 'male',
         isMenstruating: userData.preferences?.isMenstruating || false
     });
 
     return { heatmapData, streak, topHabit, insight, trends };
-  }, [logs, userData]);
+  }, [logs, userData, selectedCategory]); // Re-run saat kategori berubah
 
   if (loading) {
     return (
@@ -122,7 +128,7 @@ export default function HistoryPage() {
 
       <div className="relative mx-auto max-w-3xl p-4 md:p-8 space-y-8">
         
-        {/* Header */}
+        {/* Header with Back Button */}
         <div className="flex items-center gap-4 animate-scale-in">
           <Link href="/dashboard" className="group rounded-full bg-slate-900/50 p-3 hover:bg-slate-800 transition border border-white/5">
             <ArrowLeft className="h-5 w-5 text-slate-400 group-hover:text-white transition-colors" />
@@ -135,9 +141,35 @@ export default function HistoryPage() {
           </div>
         </div>
 
-        {/* --- SMART INSIGHT CARD (COMPONENT BARU) --- */}
+        {/* --- DROPDOWN FILTER KATEGORI (NEW UI) --- */}
+        <div className="flex overflow-x-auto pb-2 gap-2 scrollbar-hide animate-scale-in">
+            {[
+                { id: "global", label: "Global" },
+                { id: "wajib", label: "Sholat Wajib" },
+                { id: "rawatib", label: "Rawatib" },
+                { id: "qiyam", label: "Qiyamul Lail" },
+                { id: "duha", label: "Dhuha & Syuruq" },
+                { id: "quran", label: "Al-Quran" },
+                { id: "puasa", label: "Puasa Sunnah" },
+            ].map((cat) => (
+                <button
+                    key={cat.id}
+                    onClick={() => setSelectedCategory(cat.id as InsightScope)}
+                    className={cn(
+                        "whitespace-nowrap rounded-full px-4 py-2 text-xs font-medium transition-all border",
+                        selectedCategory === cat.id 
+                            ? "bg-emerald-500 text-white border-emerald-400 shadow-[0_0_15px_rgba(16,185,129,0.3)]" 
+                            : "bg-slate-900/50 text-slate-400 border-white/5 hover:bg-slate-800 hover:text-white"
+                    )}
+                >
+                    {cat.label}
+                </button>
+            ))}
+        </div>
+
+        {/* --- SMART INSIGHT CARD --- */}
         <div className="animate-scale-in" style={{ animationDelay: "0.1s" }}>
-            <HistoryInsights insight={analytics.insight} trends={analytics.trends} />
+            <HistoryInsights insight={analytics.insight} trends={analytics.trends} categoryLabel={selectedCategory} />
         </div>
 
         {/* --- STATS GRID --- */}
@@ -181,7 +213,9 @@ export default function HistoryPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-2">
                 <CalendarDays className="h-5 w-5 text-slate-400" />
-                <h3 className="font-semibold text-slate-200">Kualitas Ibadah</h3>
+                <h3 className="font-semibold text-slate-200 capitalize">
+                    Grafik {selectedCategory === 'global' ? 'Kualitas Ibadah' : selectedCategory.replace('_', ' ')}
+                </h3>
             </div>
             {userData?.preferences?.isMenstruating && (
                 <span className="text-[10px] px-2 py-1 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">
@@ -191,7 +225,8 @@ export default function HistoryPage() {
           </div>
           
           <div className="w-full overflow-x-auto pb-2 scrollbar-hide">
-             <Heatmap data={analytics.heatmapData} year={year} />
+             {/* Pass category ke Heatmap agar warnanya bisa adaptif */}
+             <Heatmap data={analytics.heatmapData} year={year} category={selectedCategory} />
           </div>
         </div>
 
@@ -200,7 +235,6 @@ export default function HistoryPage() {
   );
 }
 
-// Komponen Card Statistik Kecil (Sama seperti sebelumnya)
 function StatCard({ icon, label, value, unit, isText = false, span = 1, customColor }: any) {
   return (
     <div className={cn(

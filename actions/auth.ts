@@ -2,7 +2,34 @@
 
 import connectDB from "@/lib/db";
 import User from "@/lib/models/User";
+import { cookies } from "next/headers";
 
+// 1. ACTION BARU: Create Session (Mencetak Cookie)
+export async function createSession(idToken: string) {
+  // PENTING: Di Next.js 15+, cookies() me-return Promise.
+  // Kita wajib menggunakan 'await cookies()' sebelum melakukan set/get/delete.
+  const cookieStore = await cookies();
+
+  // Set cookie '__session' (Nama standar agar kompatibel)
+  // HttpOnly: Tidak bisa dibaca JS browser (Aman dari XSS)
+  // Secure: Hanya jalan di HTTPS (Localhost otomatis dikecualikan)
+  cookieStore.set("__session", idToken, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    maxAge: 60 * 60 * 24 * 5, // 5 Hari
+    path: "/",
+  });
+
+  return { success: true };
+}
+
+// 2. ACTION BARU: Logout (Hapus Cookie)
+export async function deleteSession() {
+  const cookieStore = await cookies();
+  cookieStore.delete("__session");
+}
+
+// 3. Sync User (Kode Lama, tetap dipertahankan & aman)
 export async function syncUser(userData: {
   uid: string;
   email: string | null;
@@ -12,10 +39,6 @@ export async function syncUser(userData: {
   try {
     await connectDB();
 
-    // LOGIKA BARU: DICEBEAR ONLY POLICY
-    // Kita hapus photoURL dari payload update agar tidak menimpa avatar Dicebear yang sudah ada.
-    // Jika user baru, photoURL akan di-generate nanti saat ONBOARDING.
-    
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { photoURL, ...userDataWithoutPhoto } = userData;
 
@@ -26,8 +49,7 @@ export async function syncUser(userData: {
         uid: userData.uid,
         email: userData.email,
         displayName: userData.displayName,
-        // photoURL: userData.photoURL,  <-- INI DIHAPUS AGAR TIDAK MENIMPA
-        // Kita tidak update 'preferences' di sini agar settingan user tidak kereset tiap login
+        // photoURL: userData.photoURL,  <-- INI DIHAPUS AGAR TIDAK MENIMPA AVATAR DICEBEAR
       },
       { upsert: true, new: true, setDefaultsOnInsert: true }
     );
