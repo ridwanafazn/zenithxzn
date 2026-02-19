@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { MASTER_HABITS, TimeBlock, HabitDefinition } from "@/lib/constants"; // Tambahkan HabitDefinition di sini
+import { MASTER_HABITS, TimeBlock, HabitDefinition } from "@/lib/constants"; 
 import HabitItem from "./HabitItem";
 import { Sunrise, Sun, Sunset, Moon, CloudMoon, CalendarDays, Plus, Droplets } from "lucide-react";
 import { getGlobalHijriOffset } from "@/actions/system";
@@ -65,9 +65,9 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
     if (!acc[habit.timeBlock]) acc[habit.timeBlock] = [];
     acc[habit.timeBlock].push(habit);
     return acc;
-  }, {} as Record<TimeBlock, HabitDefinition[]>); // Gunakan HabitDefinition[] secara eksplisit
+  }, {} as Record<TimeBlock, HabitDefinition[]>);
 
-  // Sorting - FIXED: Menambahkan tipe eksplisit pada parameter a dan b
+  // Sorting
   Object.keys(groupedHabits).forEach((key) => {
       const k = key as TimeBlock;
       groupedHabits[k].sort((a: HabitDefinition, b: HabitDefinition) => b.weight - a.weight);
@@ -120,7 +120,8 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
             </div>
             
             <div className="grid gap-3">
-              {habits.map((habit) => {
+              {/* FIX: Tambahkan tipe HabitDefinition pada parameter habit */}
+              {habits.map((habit: HabitDefinition) => {
                 const isCompleted = dailyLog?.checklists?.includes(habit.id) || false;
                 const currentCount = dailyLog?.counters?.[habit.id] || 0;
                 
