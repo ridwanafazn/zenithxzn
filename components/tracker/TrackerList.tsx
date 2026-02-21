@@ -81,9 +81,12 @@ export default function TrackerList({
   }, {} as Record<TimeBlock, DynamicHabit[]>); 
 
   Object.keys(groupedHabits).forEach((key) => {
-      const k = key as TimeBlock;
-      groupedHabits[k].sort((a: DynamicHabit, b: DynamicHabit) => b.weight - a.weight);
-  });
+  const k = key as TimeBlock;
+  groupedHabits[k].sort(
+    (a: DynamicHabit, b: DynamicHabit) =>
+      (a.order ?? 999) - (b.order ?? 999)
+  );
+});
 
   // Kapan_saja dihilangkan dari order utama agar tidak dirender berurutan dengan yang lain
   const sectionOrder: TimeBlock[] = [
