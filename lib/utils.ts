@@ -207,7 +207,7 @@ export function analyzeZenithTrends(
 
   // Wajib Compliance (Current Period)
   let totalWajibCompliance = 0;
-currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(log, userData.gender));
+  currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(log, userData.gender));
   const avgWajibCompliance = currentPeriodLogs.length > 0 ? Math.round(totalWajibCompliance / currentPeriodLogs.length) : 0;
 
   // Weakest Day (Menghitung dari semua data agar lebih akurat polanya)
@@ -218,7 +218,7 @@ currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(lo
   
   logs.forEach(log => {
     const isHaidValid = userData.gender === "female" && log.isMenstruating;
-    if (isHaidValid && habitDef.isPhysical) return;
+    if (isHaidValid && category === 'wajib') return; // Jangan hitung hari haid sebagai weakest day sholat
 
     const day = new Date(log.date).getDay();
     const dailyScore = calculateDailyScore(log, category);
@@ -255,7 +255,8 @@ currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(lo
           if (!habitDef) return;
 
           // Cek apakah habit ini wajib di hari itu? (Abaikan jika haid dan habit itu amalan fisik)
-          if (log.isMenstruating && habitDef.isPhysical) return;
+          const isHaidValid = userData.gender === "female" && log.isMenstruating;
+          if (isHaidValid && habitDef.isPhysical) return;
 
           habitCounts[id].totalApplicable += 1;
           if (log.checklists?.includes(id)) {
