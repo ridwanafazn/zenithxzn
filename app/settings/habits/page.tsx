@@ -18,7 +18,8 @@ import {
   CloudMoon, 
   CalendarDays,
   Droplets, // Icon Haid
-  Ban // Icon Terlarang/Restricted
+  Ban, // Icon Terlarang/Restricted
+  Infinity as InfinityIcon // TAMBAHAN: Icon untuk kategori Fleksibel
 } from "lucide-react";
 import Link from "next/link";
 import { cn } from "@/lib/utils";
@@ -30,6 +31,7 @@ const BLOCK_CONFIG: Record<string, { label: string; icon: any; color: string }> 
   sore: { label: "Waktu Asar", icon: Sun, color: "text-orange-400" },
   maghrib_isya: { label: "Maghrib & Isya", icon: Sunset, color: "text-purple-400" },
   malam_tidur: { label: "Sebelum Tidur", icon: Moon, color: "text-slate-400" },
+  kapan_saja: { label: "Amalan Fleksibel", icon: InfinityIcon, color: "text-blue-400" }, // TAMBAHAN: Konfigurasi tampilan
   weekly: { label: "Mingguan", icon: CalendarDays, color: "text-emerald-400" },
   monthly: { label: "Bulanan", icon: CalendarDays, color: "text-teal-400" }
 };
@@ -90,8 +92,9 @@ export default function HabitMarketplacePage() {
     return acc;
   }, {} as Record<TimeBlock, typeof MASTER_HABITS>);
 
+  // TAMBAHAN: Memasukkan "kapan_saja" ke dalam urutan render
   const sectionOrder: TimeBlock[] = [
-    "sepertiga_malam", "subuh", "pagi_siang", "sore", "maghrib_isya", "malam_tidur", "weekly", "monthly"
+    "sepertiga_malam", "subuh", "pagi_siang", "sore", "maghrib_isya", "malam_tidur", "kapan_saja", "weekly", "monthly"
   ];
 
   if (loading) {

@@ -3,10 +3,11 @@
 import { useMemo, useState, useEffect } from "react";
 import { TimeBlock } from "@/lib/constants"; 
 import HabitItem from "./HabitItem";
-import { Sunrise, Sun, Sunset, Moon, CloudMoon, CalendarDays, Plus, Droplets } from "lucide-react";
+import { Sunrise, Sun, Sunset, Moon, CloudMoon, CalendarDays, Plus, Droplets, Infinity as InfinityIcon, ChevronDown } from "lucide-react";
 import { getGlobalHijriOffset } from "@/actions/system";
 import { generateDailyHabits, DynamicHabit } from "@/lib/habit-engine"; 
 import { getSmartHijriDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 interface TrackerListProps {
   userData?: any; 
@@ -25,7 +26,8 @@ const TIME_BLOCK_CONFIG: Record<string, { label: string; icon: any; color: strin
   maghrib_isya: { label: "Maghrib & Isya", icon: Sunset, color: "text-purple-400" },
   malam_tidur: { label: "Sebelum Tidur", icon: Moon, color: "text-slate-400" },
   weekly: { label: "Mingguan", icon: CalendarDays, color: "text-emerald-400" },
-  monthly: { label: "Bulanan", icon: CalendarDays, color: "text-teal-400" }
+  monthly: { label: "Bulanan", icon: CalendarDays, color: "text-teal-400" },
+  kapan_saja: { label: "Kapan Saja (Fleksibel)", icon: InfinityIcon, color: "text-blue-400" } // Tambahan config
 };
 
 export default function TrackerList({ 
@@ -38,6 +40,9 @@ export default function TrackerList({
 }: TrackerListProps) {
   
   const [systemOffset, setSystemOffset] = useState(0);
+  
+  // --- STATE ACCORDION ---
+  const [isFlexibleOpen, setIsFlexibleOpen] = useState(false);
 
   useEffect(() => {
     getGlobalHijriOffset().then((val) => setSystemOffset(val));
@@ -80,11 +85,17 @@ export default function TrackerList({
       groupedHabits[k].sort((a: DynamicHabit, b: DynamicHabit) => b.weight - a.weight);
   });
 
+  // Kapan_saja dihilangkan dari order utama agar tidak dirender berurutan dengan yang lain
   const sectionOrder: TimeBlock[] = [
     "sepertiga_malam", "subuh", "pagi_siang", "sore", "maghrib_isya", "malam_tidur", "weekly", "monthly"
   ];
   
-  const isMenstruating = safePrefs.isMenstruating === true;
+  const isMenstruating = safeGender === "female" && safePrefs.isMenstruating === true;
+
+  // --- HELPER UNTUK ACCORDION FLEKSIBEL ---
+  const flexibleHabits = groupedHabits["kapan_saja"] || [];
+  const completedFlexibleCount = flexibleHabits.filter(h => safeLog.checklists?.includes(h.id)).length;
+  const isAllFlexibleDone = flexibleHabits.length > 0 && completedFlexibleCount === flexibleHabits.length;
 
   return (
     <div className="relative space-y-8 pb-32 pl-4">
@@ -108,6 +119,7 @@ export default function TrackerList({
 
       <div className="absolute left-[27px] top-4 bottom-0 w-px border-l border-dashed border-slate-800/50 z-0 hidden md:block"></div>
 
+      {/* --- RENDER BLOK WAKTU UTAMA --- */}
       {sectionOrder.map((block) => {
         const habits = groupedHabits[block];
         if (!habits || habits.length === 0) return null;
@@ -155,6 +167,59 @@ export default function TrackerList({
         );
       })}
 
+      {/* --- NEW: RENDER ACCORDION AMALAN FLEKSIBEL --- */}
+      {flexibleHabits.length > 0 && (
+          <section className="relative z-10 pt-4 border-t border-dashed border-white/10 animate-scale-in">
+             <button 
+                onClick={() => setIsFlexibleOpen(!isFlexibleOpen)}
+                className={cn(
+                    "w-full flex items-center justify-between p-4 rounded-2xl border transition-all active:scale-[0.98]",
+                    isAllFlexibleDone 
+                        ? "bg-emerald-950/20 border-emerald-500/20 text-emerald-400" 
+                        : "bg-slate-900/50 border-white/5 hover:bg-slate-800/80 text-slate-300"
+                )}
+             >
+                 <div className="flex items-center gap-3">
+                     <div className={cn("p-2 rounded-lg", isAllFlexibleDone ? "bg-emerald-500/10" : "bg-blue-500/10 text-blue-400")}>
+                         <InfinityIcon className="h-5 w-5" />
+                     </div>
+                     <div className="text-left">
+                         <h3 className="text-sm font-bold tracking-wide uppercase">Amalan Fleksibel</h3>
+                         <p className="text-[10px] opacity-70">
+                            {completedFlexibleCount} dari {flexibleHabits.length} selesai
+                         </p>
+                     </div>
+                 </div>
+                 <ChevronDown className={cn("h-5 w-5 transition-transform duration-300", isFlexibleOpen ? "rotate-180" : "rotate-0")} />
+             </button>
+
+             {/* Konten Accordion */}
+             <div className={cn(
+                 "grid gap-3 transition-all duration-300 overflow-hidden",
+                 isFlexibleOpen ? "mt-4 opacity-100 max-h-[1000px]" : "mt-0 opacity-0 max-h-0"
+             )}>
+                 {flexibleHabits.map((habit: DynamicHabit) => {
+                    const isCompleted = safeLog.checklists?.includes(habit.id) || false;
+                    const currentCount = safeLog.counters?.[habit.id] || 0;
+
+                    return (
+                        <HabitItem
+                            key={`${date}-${habit.id}-flex`}
+                            habit={habit}
+                            userId={safeUid} 
+                            date={date}
+                            isCompleted={isCompleted}
+                            currentCount={currentCount}
+                            onToggle={() => onHabitToggle(habit.id)} 
+                            onCountChange={(val) => onCounterUpdate(habit.id, val)} 
+                        />
+                    );
+                 })}
+             </div>
+          </section>
+      )}
+
+      {/* --- TOMBOL ATUR MENU IBADAH --- */}
       <div className="mt-12 flex flex-col items-center justify-center rounded-3xl border border-dashed border-slate-800 bg-slate-900/30 p-8 text-center hover:bg-slate-900/50 transition-colors">
         <a href="/settings/habits" className="inline-flex items-center gap-2 rounded-full bg-emerald-500/10 px-6 py-2 text-sm font-semibold text-emerald-400 hover:bg-emerald-500 hover:text-white transition-all">
           <Plus className="h-4 w-4" />

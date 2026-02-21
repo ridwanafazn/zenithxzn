@@ -225,7 +225,10 @@ export default function DashboardPage() {
     const completedSunnah = sunnahTargets.filter(id => checked.includes(id)).length;
 
     let wajibPercent = 0;
-    if (dbUser.preferences?.isMenstruating) {
+    
+    const isHaidValid = dbUser.gender === "female" && dbUser.preferences?.isMenstruating === true;
+
+    if (isHaidValid) {
         wajibPercent = 100; 
     } else {
         wajibPercent = wajibTargets.length > 0 ? Math.round((completedWajib / wajibTargets.length) * 100) : 0;

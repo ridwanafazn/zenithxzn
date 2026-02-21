@@ -129,10 +129,13 @@ export function calculateDailyScore(log: any, category: InsightScope = "global")
   return score;
 }
 
-export function checkWajibCompliance(log: any) {
+export function checkWajibCompliance(log: any, gender: string = "male") {
   if (!log || !log.checklists) return 0; 
   const wajibHabits = INSIGHT_GROUPS.wajib;
-  if (log.isMenstruating) return 100;
+  
+  const isHaidValid = gender === "female" && log.isMenstruating;
+  if (isHaidValid) return 100;
+
   const completedWajib = wajibHabits.filter(id => log.checklists.includes(id));
   return Math.round((completedWajib.length / wajibHabits.length) * 100);
 }
@@ -186,7 +189,7 @@ export function analyzeZenithTrends(
   });
 
   // Ekstrak data hari haid (Untuk visualisasi Heatmap)
-  const menstruatingDates = logs.filter(l => l.isMenstruating).map(l => l.date);
+  const menstruatingDates = userData.gender === "female" ? logs.filter(l => l.isMenstruating).map(l => l.date) : [];
 
   // Helper Score Kalkulator
   const getAvgScore = (logsArr: any[]) => {
@@ -204,7 +207,7 @@ export function analyzeZenithTrends(
 
   // Wajib Compliance (Current Period)
   let totalWajibCompliance = 0;
-  currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(log));
+currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(log, userData.gender));
   const avgWajibCompliance = currentPeriodLogs.length > 0 ? Math.round(totalWajibCompliance / currentPeriodLogs.length) : 0;
 
   // Weakest Day (Menghitung dari semua data agar lebih akurat polanya)
@@ -214,11 +217,12 @@ export function analyzeZenithTrends(
   };
   
   logs.forEach(log => {
-    if (log.isMenstruating && category === 'wajib') return; // Jangan hitung hari haid sebagai weakest day sholat
+    const isHaidValid = userData.gender === "female" && log.isMenstruating;
+    if (isHaidValid && habitDef.isPhysical) return;
 
     const day = new Date(log.date).getDay();
     const dailyScore = calculateDailyScore(log, category);
-    if (dailyScore > 0 || !log.isMenstruating) { 
+    if (dailyScore > 0 || !isHaidValid) { 
         dayScoreMap[day].total += dailyScore;
         dayScoreMap[day].count += 1;
     }
@@ -296,7 +300,9 @@ export function generateZenithInsight(
   if (!analysis) return { text: "Data belum cukup.", title: "Mulai", color: "neutral", tip: "Isi jurnal setidaknya seminggu." };
 
   const { avgScore, scoreVelocity, weakestDay, habitInDanger, category } = analysis;
-  const isHaid = userData.isMenstruating;
+  
+  // PENJAGA LAPIS 4B: Narasi tidak akan pernah mengeluarkan teks pink untuk ikhwan
+  const isHaid = userData.gender === "female" && userData.isMenstruating;
   
   // Tentukan arah tren
   const trendText = scoreVelocity > 0 ? `naik ${scoreVelocity}%` : scoreVelocity < 0 ? `turun ${Math.abs(scoreVelocity)}%` : "stabil";

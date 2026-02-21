@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation"; 
-import { Check, Plus, Minus, Lock, Clock, ShieldCheck, Maximize2 } from "lucide-react";
+import { Check, Plus, Minus, Lock, Clock, ShieldCheck, Maximize2, BookOpen } from "lucide-react";
 import { DynamicHabit } from "@/lib/habit-engine"; 
 import { toggleHabit, updateCounter } from "@/actions/log";
 import { cn } from "@/lib/utils";
@@ -190,11 +190,29 @@ export default function HabitItem({
               done ? isWajib ? "text-amber-400 decoration-amber-500/30" : "text-emerald-400 line-through decoration-emerald-500/30" : isWajib ? "text-white" : "text-slate-100",
               isLocked && "text-slate-500"
             )}>
-              {habit.title}
+              <span className="truncate">{habit.title}</span>
+              
+              {/* Badge Rawatib */}
               {isRawatib && !isLocked && !done && (
-                  <span className="hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono tracking-tight">
+                  <span className="shrink-0 hidden sm:inline-block text-[10px] px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/20 font-mono tracking-tight">
                       Rawatib
                   </span>
+              )}
+
+              {/* NEW: Tombol Guide URL (Buku Panduan) */}
+              {habit.guideUrl && (
+                  <a 
+                      href={habit.guideUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer"
+                      className={cn(
+                          "shrink-0 inline-flex items-center justify-center p-1.5 rounded-lg transition-all active:scale-95",
+                          done ? "text-emerald-500/50 hover:bg-emerald-500/10 hover:text-emerald-400" : "text-slate-400 hover:bg-blue-500/10 hover:text-blue-400"
+                      )}
+                      title="Buka Panduan / Bacaan"
+                  >
+                      <BookOpen className="h-4 w-4" />
+                  </a>
               )}
             </span>
             

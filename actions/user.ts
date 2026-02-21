@@ -160,10 +160,14 @@ export async function updateUserProfile(uid: string, data: {
         if (cleanUsn) {
             updateData.username = cleanUsn;
         }
+        
+        if (data.gender === "male") {
+            updateData["preferences.isMenstruating"] = false;
+        }
 
         await User.findOneAndUpdate(
             { uid },
-            updateData,
+            { $set: updateData },
             { new: true } 
         );
 
