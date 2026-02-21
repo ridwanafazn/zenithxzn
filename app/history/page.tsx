@@ -20,8 +20,9 @@ import {
   Trophy, 
   CalendarDays, 
   Loader2, 
-  Target,
+  Target, // Tetap diimport untuk berjaga-jaga jika ingin dipakai lagi nanti
   AlertCircle,
+  Activity, // Icon baru untuk Habit in Danger
   Filter
 } from "lucide-react";
 import Link from "next/link";
@@ -63,7 +64,6 @@ export default function HistoryPage() {
         return {
             heatmapData: {},
             streak: { current: 0, longest: 0 },
-            topHabit: "-",
             insight: { text: "Belum ada data cukup.", title: "Mulai Perjalanan", color: "neutral", tip: "Isi jurnal hari ini." },
             trends: null
         };
@@ -72,7 +72,6 @@ export default function HistoryPage() {
     // 1. Siapkan Data Dasar untuk Heatmap (Sesuai Kategori)
     const heatmapData: Record<string, number> = {}; 
     const loggedDates: string[] = [];
-    const habitFrequency: Record<string, number> = {};
 
     logs.forEach((log) => {
       // HITUNG SKOR BERDASARKAN KATEGORI YG DIPILIH
@@ -81,33 +80,24 @@ export default function HistoryPage() {
       
       // Streak Logic: Hanya hitung jika skor > 0 (artinya ada aktifitas di kategori ini)
       if (score > 0) loggedDates.push(log.date);
-      
-      log.checklists?.forEach((habitId: string) => {
-        habitFrequency[habitId] = (habitFrequency[habitId] || 0) + 1;
-      });
     });
 
     const streak = calculateStreak(loggedDates);
 
-    // 2. Cari Top Habit (Global, tidak terpengaruh filter agar tetap informatif)
-    const sortedHabits = Object.entries(habitFrequency).sort((a, b) => b[1] - a[1]);
-    const topHabitRaw = sortedHabits.length > 0 ? sortedHabits[0][0] : "-";
-    const topHabit = topHabitRaw.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-
-    // 3. JALANKAN ANALISIS MENDALAM (Context Aware)
+    // 2. JALANKAN ANALISIS MENDALAM (Context Aware & Comparative)
     const trends = analyzeZenithTrends(logs, {
         gender: userData.gender || 'male',
         isMenstruating: userData.preferences?.isMenstruating || false
-    }, selectedCategory); // Pass category
+    }, selectedCategory); 
 
-    // 4. GENERATE NARASI (Context Aware)
+    // 3. GENERATE NARASI (Context Aware)
     const insight = generateZenithInsight(trends, {
         gender: userData.gender || 'male',
         isMenstruating: userData.preferences?.isMenstruating || false
     });
 
-    return { heatmapData, streak, topHabit, insight, trends };
-  }, [logs, userData, selectedCategory]); // Re-run saat kategori berubah
+    return { heatmapData, streak, insight, trends };
+  }, [logs, userData, selectedCategory]); 
 
   if (loading) {
     return (
@@ -176,35 +166,39 @@ export default function HistoryPage() {
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 animate-scale-in" style={{ animationDelay: "0.2s" }}>
           <StatCard 
             icon={<Flame className="h-4 w-4 text-orange-500" />} 
-            label="Streak" 
+            label="Streak Kategori" 
             value={analytics.streak.current} 
             unit="Hari" 
           />
           <StatCard 
             icon={<Trophy className="h-4 w-4 text-yellow-500" />} 
-            label="Rekor" 
+            label="Rekor Kategori" 
             value={analytics.streak.longest} 
             unit="Hari" 
           />
-           <StatCard 
-            icon={<Target className="h-4 w-4 text-blue-500" />} 
-            label="Favorit" 
-            value={analytics.topHabit} 
-            unit="" 
-            isText={true}
-            span={2}
-          />
-          {/* Card untuk Weakest Day */}
+          
+          {/* Diganti dari Top Habit menjadi Habit in Danger agar lebih berorientasi muhasabah */}
           {analytics.trends && (
-             <StatCard 
-                icon={<AlertCircle className="h-4 w-4 text-red-400" />} 
-                label="Hari Kritis" 
-                value={analytics.trends.weakestDay} 
-                unit=""
-                isText={true}
-                span={2}
-                customColor="text-red-300"
-             />
+              <>
+                 <StatCard 
+                    icon={<Activity className="h-4 w-4 text-amber-400" />} 
+                    label="Perhatian Ekstra" 
+                    value={analytics.trends.habitInDanger} 
+                    unit="" 
+                    isText={true}
+                    span={2}
+                    customColor="text-amber-300"
+                  />
+                 <StatCard 
+                    icon={<AlertCircle className="h-4 w-4 text-red-400" />} 
+                    label="Hari Kritis" 
+                    value={analytics.trends.weakestDay} 
+                    unit=""
+                    isText={true}
+                    span={2}
+                    customColor="text-red-300"
+                 />
+              </>
           )}
         </div>
 
@@ -217,16 +211,22 @@ export default function HistoryPage() {
                     Grafik {selectedCategory === 'global' ? 'Kualitas Ibadah' : selectedCategory.replace('_', ' ')}
                 </h3>
             </div>
+            
+            {/* Indikator Profil Haid di Header (Opsional, karena sudah ada di Heatmap) */}
             {userData?.preferences?.isMenstruating && (
                 <span className="text-[10px] px-2 py-1 rounded bg-pink-500/10 text-pink-400 border border-pink-500/20">
-                    Mode Haid Aktif
+                    Siklus Haid Aktif
                 </span>
             )}
           </div>
           
           <div className="w-full overflow-x-auto pb-2 scrollbar-hide">
-             {/* Pass category ke Heatmap agar warnanya bisa adaptif */}
-             <Heatmap data={analytics.heatmapData} year={year} category={selectedCategory} />
+             <Heatmap 
+                data={analytics.heatmapData} 
+                year={year} 
+                category={selectedCategory} 
+                menstruatingDates={analytics.trends?.menstruatingDates || []} // PASSING DATA HAID KE HEATMAP
+             />
           </div>
         </div>
 
@@ -238,7 +238,7 @@ export default function HistoryPage() {
 function StatCard({ icon, label, value, unit, isText = false, span = 1, customColor }: any) {
   return (
     <div className={cn(
-        "relative overflow-hidden rounded-2xl border border-white/5 bg-slate-900/40 p-4 backdrop-blur-sm transition-all hover:bg-slate-800/60 hover:border-white/10",
+        "relative overflow-hidden rounded-2xl border border-white/5 bg-slate-900/40 p-4 backdrop-blur-sm transition-all hover:bg-slate-800/60 hover:border-white/10 flex flex-col justify-center", // Ditambahkan flex col & justify center
         span === 2 ? "col-span-2" : "col-span-1"
     )}>
       <div className="flex items-center gap-2 mb-2">

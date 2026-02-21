@@ -1,6 +1,5 @@
 import { Coordinates, CalculationMethod, PrayerTimes, Madhab } from 'adhan';
 
-// Mapping TimeBlock Zenith ke Logic Waktu
 export type PrayerTimeBlock = 
   | 'sepertiga_malam' 
   | 'subuh' 
@@ -14,71 +13,63 @@ interface UserLocation {
   lng: number;
 }
 
+export interface DailyPrayerTimes {
+  fajr: Date;
+  sunrise: Date;
+  dhuhr: Date;
+  asr: Date;
+  maghrib: Date;
+  isha: Date;
+}
+
+// Helper: Mengubah string jam dari API ("12:04") menjadi objek Date hari ini
+function parseApiTimeToDate(timeStr: string, baseDate: Date): Date {
+  const cleanTime = timeStr.split(' ')[0]; // Bersihkan timezone string jika ada
+  const [hours, minutes] = cleanTime.split(':').map(Number);
+  const d = new Date(baseDate);
+  d.setHours(hours, minutes, 0, 0);
+  return d;
+}
+
 /**
- * Mendapatkan Objek Waktu Sholat Adhan
+ * Mendapatkan Objek Waktu Sholat
+ * PRIORITAS: Data API Kemenag -> FALLBACK: Kalkulasi Lokal (Library)
  */
-export function getPrayerTimes(date: Date, location: UserLocation) {
+export function getPrayerTimes(date: Date, location: UserLocation, apiTimings?: any): DailyPrayerTimes {
+  // 1. Jika data API berhasil di-fetch
+  if (apiTimings && apiTimings.Fajr) {
+     return {
+        fajr: parseApiTimeToDate(apiTimings.Fajr, date),
+        sunrise: parseApiTimeToDate(apiTimings.Sunrise, date),
+        dhuhr: parseApiTimeToDate(apiTimings.Dhuhr, date),
+        asr: parseApiTimeToDate(apiTimings.Asr, date),
+        maghrib: parseApiTimeToDate(apiTimings.Maghrib, date),
+        isha: parseApiTimeToDate(apiTimings.Isha, date),
+     };
+  }
+
+  // 2. Jika API gagal/loading, gunakan kalkulasi lokal sebagai fallback
   const coordinates = new Coordinates(location.lat, location.lng);
-  
-  // Konfigurasi Standar Kemenag RI (Singapore method mirip dengan Indonesia)
-  // Atau bisa kustomisasi degree sesuai kebutuhan
   const params = CalculationMethod.Singapore();
-  params.madhab = Madhab.Shafi; // Mayoritas Indonesia
+  params.madhab = Madhab.Shafi; 
   
-  return new PrayerTimes(coordinates, date, params);
+  const pt = new PrayerTimes(coordinates, date, params);
+  
+  return {
+      fajr: pt.fajr,
+      sunrise: pt.sunrise,
+      dhuhr: pt.dhuhr,
+      asr: pt.asr,
+      maghrib: pt.maghrib,
+      isha: pt.isha
+  };
 }
 
 /**
- * Cek apakah sudah masuk waktu Maghrib?
- * Ini adalah PIVOT POINT pergantian tanggal Hijriyah.
+ * Cek apakah sudah masuk waktu Maghrib? (Pivot point Hijriyah)
  */
-export function isAfterMaghrib(date: Date, location: UserLocation): boolean {
-  const prayers = getPrayerTimes(date, location);
-  const now = new Date().getTime(); // Waktu Server/Client saat ini
-  // Kita pakai waktu maghrib + buffer 2 menit biar aman
+export function isAfterMaghrib(date: Date, location: UserLocation, apiTimings?: any): boolean {
+  const prayers = getPrayerTimes(date, location, apiTimings);
+  const now = new Date().getTime(); 
   return now >= prayers.maghrib.getTime();
-}
-
-/**
- * Menentukan Blok Waktu saat ini untuk UI Filtering
- */
-export function getCurrentTimeBlock(date: Date, location: UserLocation): PrayerTimeBlock {
-  const prayers = getPrayerTimes(date, location);
-  const now = date.getTime();
-
-  // 1. Sepertiga Malam (Anggap 00:00 - Subuh)
-  // Idealnya hitung : Maghrib + ((Subuh - Maghrib) * 2/3), tapi ini simplifikasi
-  if (now < prayers.fajr.getTime()) {
-    return 'sepertiga_malam';
-  }
-
-  // 2. Waktu Subuh (Subuh - Terbit Matahari)
-  if (now >= prayers.fajr.getTime() && now < prayers.sunrise.getTime()) {
-    return 'subuh';
-  }
-
-  // 3. Pagi & Siang (Dhuha & Zuhur) -> Terbit - Ashar
-  if (now >= prayers.sunrise.getTime() && now < prayers.asr.getTime()) {
-    return 'pagi_siang';
-  }
-
-  // 4. Sore (Ashar - Maghrib)
-  if (now >= prayers.asr.getTime() && now < prayers.maghrib.getTime()) {
-    return 'sore';
-  }
-
-  // 5. Maghrib & Isya (Maghrib - Isya + 1 jam buffer?)
-  // Kita set batas sampai jam 21:00 atau 22:00 malam
-  // Tapi Zenith mendefinisikan 'malam_tidur' terpisah.
-  
-  // Kita anggap Maghrib_Isya sampai jam 21:00
-  const limitMalam = new Date(date);
-  limitMalam.setHours(21, 0, 0);
-
-  if (now >= prayers.maghrib.getTime() && now < limitMalam.getTime()) {
-    return 'maghrib_isya';
-  }
-
-  // 6. Sisanya Malam Tidur
-  return 'malam_tidur';
 }

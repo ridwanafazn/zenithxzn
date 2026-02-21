@@ -70,24 +70,17 @@ function toHijri(date: Date) {
     
     let id = z - Math.floor(29.5001 * im - 29);
 
-    return {
-        day: id,
-        month: im, 
-        year: iy
-    };
+    return { day: id, month: im, year: iy };
 }
 
 export function getSmartHijriDate(dateObj: Date, offset: number = 0) {
     let adjustedDate = new Date(dateObj.getTime());
-
     if (adjustedDate.getHours() >= 18) {
         adjustedDate.setDate(adjustedDate.getDate() + 1);
     }
-
     if (offset !== 0) {
         adjustedDate.setDate(adjustedDate.getDate() + offset);
     }
-
     return toHijri(adjustedDate);
 }
 
@@ -106,7 +99,6 @@ export function getMoonPhaseIcon(day: number) {
 }
 
 // --- LOCATION UTILS ---
-
 export async function getCityFromCoords(lat: number, lng: number) {
     try {
         const response = await fetch(
@@ -114,25 +106,14 @@ export async function getCityFromCoords(lat: number, lng: number) {
             { headers: { "User-Agent": "ZenithApp/1.0" } } 
         );
         const data = await response.json();
-        
-        return data.address?.city || 
-               data.address?.town || 
-               data.address?.regency || 
-               data.address?.county || 
-               "Lokasi Terpilih";
+        return data.address?.city || data.address?.town || data.address?.regency || data.address?.county || "Lokasi Terpilih";
     } catch (err) {
-        console.error("Gagal reverse geocode:", err);
         return "Lokasi Tidak Dikenal";
     }
 }
 
-// --- CONTEXT-AWARE ANALYSIS UTILS (V2) ---
+// --- CONTEXT-AWARE ANALYSIS UTILS (V3 - COMPARATIVE) ---
 
-/**
- * Menghitung skor harian berdasarkan kategori yang dipilih.
- * Jika Global: Hitung semua (weighted).
- * Jika Kategori Spesifik: Hanya hitung habit dalam kategori tersebut.
- */
 export function calculateDailyScore(log: any, category: InsightScope = "global") {
   if (!log || !log.checklists) return 0;
   
@@ -140,9 +121,7 @@ export function calculateDailyScore(log: any, category: InsightScope = "global")
   const targetHabitIds = category === "global" ? null : INSIGHT_GROUPS[category];
 
   log.checklists.forEach((id: string) => {
-    // Filter Logic
     if (targetHabitIds && !targetHabitIds.includes(id)) return;
-
     const habit = MASTER_HABITS.find(h => h.id === id);
     if (habit) score += habit.weight;
   });
@@ -153,9 +132,7 @@ export function calculateDailyScore(log: any, category: InsightScope = "global")
 export function checkWajibCompliance(log: any) {
   if (!log || !log.checklists) return 0; 
   const wajibHabits = INSIGHT_GROUPS.wajib;
-  
   if (log.isMenstruating) return 100;
-
   const completedWajib = wajibHabits.filter(id => log.checklists.includes(id));
   return Math.round((completedWajib.length / wajibHabits.length) * 100);
 }
@@ -185,8 +162,7 @@ export function calculateStreak(dates: string[]): { current: number; longest: nu
 }
 
 /**
- * ENGINE ANALISIS V2: Context Aware
- * Menerima parameter 'category' untuk memfilter data sebelum dianalisa.
+ * ENGINE ANALISIS V3: Comparative & Deep Context
  */
 export function analyzeZenithTrends(
     logs: any[], 
@@ -196,33 +172,53 @@ export function analyzeZenithTrends(
   if (!logs || logs.length === 0) return null;
 
   const today = new Date();
-  const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-  const thisWeekLogs = logs.filter(l => new Date(l.date) >= sevenDaysAgo);
+  today.setHours(0,0,0,0);
   
-  // 1. Calculate Average Score (Contextual)
+  // Waktu Komparasi: 7 Hari Terakhir VS 7 Hari Sebelumnya
+  const sevenDaysAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const fourteenDaysAgo = new Date(today.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+  // Pisahkan Log berdasarkan timeframe
+  const currentPeriodLogs = logs.filter(l => new Date(l.date) >= sevenDaysAgo);
+  const previousPeriodLogs = logs.filter(l => {
+      const d = new Date(l.date);
+      return d >= fourteenDaysAgo && d < sevenDaysAgo;
+  });
+
+  // Ekstrak data hari haid (Untuk visualisasi Heatmap)
+  const menstruatingDates = logs.filter(l => l.isMenstruating).map(l => l.date);
+
+  // Helper Score Kalkulator
   const getAvgScore = (logsArr: any[]) => {
     if (logsArr.length === 0) return 0;
     const total = logsArr.reduce((acc, curr) => acc + calculateDailyScore(curr, category), 0);
     return Math.round(total / logsArr.length);
   };
-  const avgScore = getAvgScore(thisWeekLogs);
-  
-  // 2. Wajib Compliance (Always calculated for foundation check)
-  let totalWajibCompliance = 0;
-  thisWeekLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(log));
-  const avgWajibCompliance = thisWeekLogs.length > 0 ? Math.round(totalWajibCompliance / thisWeekLogs.length) : 0;
 
-  // 3. Weakest Day (Contextual)
+  const avgScore = getAvgScore(currentPeriodLogs);
+  const prevAvgScore = getAvgScore(previousPeriodLogs);
+  
+  // Hitung Velocity (Perubahan performa)
+  const scoreVelocity = avgScore - prevAvgScore; 
+  // Nilai positif = Membaik, Negatif = Memburuk
+
+  // Wajib Compliance (Current Period)
+  let totalWajibCompliance = 0;
+  currentPeriodLogs.forEach(log => totalWajibCompliance += checkWajibCompliance(log));
+  const avgWajibCompliance = currentPeriodLogs.length > 0 ? Math.round(totalWajibCompliance / currentPeriodLogs.length) : 0;
+
+  // Weakest Day (Menghitung dari semua data agar lebih akurat polanya)
   const dayScoreMap: Record<number, {total: number, count: number}> = { 
     0: {total:0, count:0}, 1: {total:0, count:0}, 2: {total:0, count:0}, 
     3: {total:0, count:0}, 4: {total:0, count:0}, 5: {total:0, count:0}, 6: {total:0, count:0} 
   };
   
   logs.forEach(log => {
+    if (log.isMenstruating && category === 'wajib') return; // Jangan hitung hari haid sebagai weakest day sholat
+
     const day = new Date(log.date).getDay();
-    // Gunakan skor kategori, bukan skor global
     const dailyScore = calculateDailyScore(log, category);
-    if (dailyScore > 0) { // Hanya hitung hari yang ada isian kategori tsb
+    if (dailyScore > 0 || !log.isMenstruating) { 
         dayScoreMap[day].total += dailyScore;
         dayScoreMap[day].count += 1;
     }
@@ -232,164 +228,173 @@ export function analyzeZenithTrends(
   let weakestDayIndex = -1;
   Object.keys(dayScoreMap).forEach((key: any) => {
     const k = parseInt(key);
-    if (dayScoreMap[k].count > 0) {
+    if (dayScoreMap[k].count > 2) { // Butuh minimal 3 data untuk menyimpulkan pola
         const avg = dayScoreMap[k].total / dayScoreMap[k].count;
         if (avg < minAvg) { minAvg = avg; weakestDayIndex = k; }
     }
   });
   const dayNames = ["Ahad", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
-  const weakestDay = weakestDayIndex !== -1 ? dayNames[weakestDayIndex] : "Belum terlihat";
+  const weakestDay = weakestDayIndex !== -1 ? dayNames[weakestDayIndex] : "-";
 
-  // 4. Habit In Danger (Contextual Filter)
-  const habitCounts: Record<string, number> = {};
+  // Habit In Danger (Mencari amalan terlemah yang BUKAN hari haid)
+  const habitCounts: Record<string, { done: number, totalApplicable: number }> = {};
   const targetIds = category === "global" ? null : INSIGHT_GROUPS[category];
 
   logs.forEach(log => {
-      log.checklists?.forEach((id: string) => {
-          if (targetIds && !targetIds.includes(id)) return;
-          habitCounts[id] = (habitCounts[id] || 0) + 1;
+      // Ambil daftar target id hari itu
+      let habitsToCheck = targetIds ? targetIds : MASTER_HABITS.map(h => h.id);
+      
+      habitsToCheck.forEach(id => {
+          if (!habitCounts[id]) habitCounts[id] = { done: 0, totalApplicable: 0 };
+          
+          const habitDef = MASTER_HABITS.find(h => h.id === id);
+          if (!habitDef) return;
+
+          // Cek apakah habit ini wajib di hari itu? (Abaikan jika haid dan habit itu amalan fisik)
+          if (log.isMenstruating && habitDef.isPhysical) return;
+
+          habitCounts[id].totalApplicable += 1;
+          if (log.checklists?.includes(id)) {
+              habitCounts[id].done += 1;
+          }
       });
   });
 
-  // Cari habit yang paling jarang dilakukan dalam kategori ini
   let habitInDanger = "-";
-  let minCount = Infinity;
-  const habitsToCheck = targetIds 
-    ? targetIds 
-    : MASTER_HABITS.filter(h => h.category === 'wajib' || h.tags?.includes('rawatib')).map(h => h.id);
-
-  habitsToCheck.forEach(id => {
-      const count = habitCounts[id] || 0;
-      // Ambang batas bahaya: dilakukan kurang dari 40% total log
-      if (count < (logs.length * 0.4) && count < minCount) {
-          minCount = count;
-          habitInDanger = MASTER_HABITS.find(h => h.id === id)?.title || "-";
+  let minPercentage = Infinity;
+  
+  Object.keys(habitCounts).forEach(id => {
+      const data = habitCounts[id];
+      if (data.totalApplicable > 5) { // Minimal sudah melewati 5 hari pengujian
+          const percentage = data.done / data.totalApplicable;
+          if (percentage < minPercentage && percentage < 0.5) { // Kurang dari 50% = Danger
+              minPercentage = percentage;
+              habitInDanger = MASTER_HABITS.find(h => h.id === id)?.title || id;
+          }
       }
   });
 
   return {
     avgScore,
-    wajibCompliance: avgWajibCompliance, // Tetap disertakan sebagai referensi
+    prevAvgScore,
+    scoreVelocity, // NEW: Untuk indikator perbandingan
+    wajibCompliance: avgWajibCompliance, 
     weakestDay,
     habitInDanger,
-    category // Pass category untuk dipakai di narrative engine
+    category,
+    menstruatingDates // NEW: Dikirim untuk Heatmap
   };
 }
 
 /**
- * NARRATIVE ENGINE V3: Context-Aware & Persona Based
+ * NARRATIVE ENGINE V4: Velocity & Deep Context
  */
 export function generateZenithInsight(
     analysis: any, 
     userData: { gender: string, isMenstruating: boolean }
 ) {
-  if (!analysis) return { text: "Data belum cukup.", title: "Mulai", color: "neutral", tip: "Isi jurnal." };
+  if (!analysis) return { text: "Data belum cukup.", title: "Mulai", color: "neutral", tip: "Isi jurnal setidaknya seminggu." };
 
-  const { avgScore, wajibCompliance, weakestDay, habitInDanger, category } = analysis;
-  const isMale = userData.gender === "male";
+  const { avgScore, scoreVelocity, weakestDay, habitInDanger, category } = analysis;
   const isHaid = userData.isMenstruating;
-
-  // --- LOGIKA UTAMA: PERCABANGAN KATEGORI ---
+  
+  // Tentukan arah tren
+  const trendText = scoreVelocity > 0 ? `naik ${scoreVelocity}%` : scoreVelocity < 0 ? `turun ${Math.abs(scoreVelocity)}%` : "stabil";
 
   switch (category) {
     case "wajib":
         if (isHaid) return {
             title: "Rehat yang Berkah",
-            text: "Tidak sholat saat haid adalah bentuk ketaatan. Allah mencatat kerinduanmu.",
+            text: "Tidak sholat saat haid adalah ketaatan. Allah mencatat kerinduanmu.",
             color: "pink",
             tip: "Ganti dengan Dzikir Pagi Petang."
         };
-        if (avgScore < 40) return {
-            title: "Perbaiki Tiang Agama",
-            text: `Masih banyak bolong, terutama di hari ${weakestDay}. Jangan menyerah, paksakan sholat tepat waktu.`,
+        if (scoreVelocity < -10) return {
+            title: "Awas Futuh (Penurunan)",
+            text: `Performa sholatmu ${trendText} minggu ini. Hari ${weakestDay !== "-" ? weakestDay : "kerja"} jadi titik rawanmu.`,
             color: "warning",
-            tip: "Pasang alarm adzan di HP."
+            tip: "Jangan tunda sholat saat sibuk."
         };
-        if (avgScore >= 50) return {
+        if (habitInDanger !== "-" && habitInDanger.includes("Subuh")) return {
+            title: "Pejuang Subuh",
+            text: "Mayoritas sholatmu aman, tapi Subuh jadi kelemahan terbesarmu saat ini.",
+            color: "warning",
+            tip: "Tidur lebih awal, jangan bergadang."
+        };
+        return {
             title: "Alhamdulillah Terjaga",
-            text: isMale 
-                ? "Sholat fardhu aman. Tantangan berikutnya: Kejar sholat berjamaah di masjid!" 
-                : "Sholat fardhu aman. Tantangan berikutnya: Sholat di awal waktu.",
+            text: scoreVelocity > 0 
+                ? `Luar biasa, kualitas sholatmu ${trendText} minggu ini! Pertahankan.`
+                : "Konsistensimu sangat baik. Tantangan berikutnya: Sholat di awal waktu.",
             color: "positive",
-            tip: "Rawatib adalah penyempurna."
+            tip: "Lengkapi dengan Rawatib."
         };
-        break;
 
     case "rawatib":
-        if (avgScore === 0) return {
-            title: "Pagar Pelindung",
-            text: "Rawatib itu seperti pagar rumah. Jika pagar kuat, rumah (sholat wajib) aman dari pencuri.",
-            color: "neutral",
-            tip: "Mulai dari Qobliyah Subuh (2 rakaat ringan)."
-        };
         if (habitInDanger !== "-") return {
             title: "Tambal yang Bocor",
-            text: `Rawatib sudah jalan, tapi '${habitInDanger}' sering terlewat. Yuk lengkapi.`,
-            color: "neutral",
-            tip: "Rawatib Zuhur & Maghrib pahalanya besar."
+            text: `Performa ${trendText}. Kamu konsisten, tapi '${habitInDanger}' sering terlewat.`,
+            color: "warning",
+            tip: "Qobliyah Subuh pahalanya lebih baik dari dunia & isinya."
         };
-        break;
+        if (avgScore > 60) return {
+            title: "Pagar Baja",
+            text: `Luar biasa! Rawatibmu ${trendText} minggu ini. Sholat wajibmu kini dipagari dengan kuat.`,
+            color: "positive",
+            tip: "Jaga terus, ini amalan ahli surga."
+        };
+        return {
+            title: "Mulai Bangun Pagar",
+            text: "Rawatib itu penyempurna. Jika sholat wajib ada yang kurang khusyuk, rawatib yang menambalnya.",
+            color: "neutral",
+            tip: "Mulai rutinkan dari Qobliyah Subuh."
+        };
 
     case "qiyam":
-        if (avgScore > 0) return {
+        if (scoreVelocity > 0) return {
             title: "Ahli Malam",
-            text: "Ciri orang sholeh adalah bangun di malam hari. Konsistensi lebih baik daripada jumlah rakaat.",
+            text: `MasyaAllah, qiyamul lailmu ${trendText}. Allah turun ke langit dunia menunggumu.`,
             color: "positive",
-            tip: "Jangan lupa Witir sebagai penutup."
+            tip: "Pertahankan walau hanya 2 rakaat ringan."
+        };
+        if (habitInDanger.includes("Witir")) return {
+            title: "Jangan Lupa Ganjil",
+            text: "Tahajud kadang berat, tapi usahakan minimal jangan tinggalkan Witir sebelum tidur.",
+            color: "warning",
+            tip: "1 rakaat witir sudah cukup jika lelah."
         };
         return {
             title: "Keheningan Malam",
-            text: "Malammu masih sepi. Allah turun ke langit dunia di sepertiga malam terakhir.",
+            text: "Sepertiga malammu masih sering terlewat. Mulailah dari langkah kecil.",
             color: "neutral",
-            tip: "Coba bangun 10 menit sebelum Subuh."
+            tip: "Pasang alarm 15 menit sebelum Subuh."
         };
-
-    case "duha":
-        if (avgScore > 0) return {
-            title: "Sedekah Sendi",
-            text: "Dhuha adalah sedekah bagi 360 persendianmu. Rezeki berkah insyaAllah mengikuti.",
-            color: "positive",
-            tip: "Minimal 2 rakaat sudah cukup."
-        };
-        break;
-    
-    case "quran":
-        if (isHaid && avgScore > 0) return {
-            title: "Hati yang Hidup",
-            text: "Fisik libur, tapi hati tetap hidup dengan Al-Quran (via hafalan/terjemahan/digital).",
-            color: "pink",
-            tip: "Murojaah hafalan pendek."
-        };
-        if (habitInDanger !== "-") return {
-            title: "Surat Pelindung",
-            text: `Jangan lupakan ${habitInDanger}. Ia bisa jadi syafaat di alam kubur.`,
-            color: "neutral",
-            tip: "Baca Al-Mulk sebelum tidur."
-        };
-        break;
 
     case "global":
     default:
-        // Fallback ke logika lama (General Overview)
         if (isHaid) return {
             title: "Masa Rehat",
-            text: "Fokus pada amalan hati dan lisan (Dzikir & Shalawat).",
+            text: "Fisik sedang libur, fokus pada amalan hati dan lisan (Dzikir & Shalawat).",
             color: "pink",
-            tip: "Dengarkan murottal."
+            tip: "Dengarkan murottal saat beraktivitas."
         };
-        if (wajibCompliance < 85) return {
-            title: "Perkuat Fondasi",
-            text: `Fokus perbaiki Sholat Wajib dulu sebelum mengejar Sunnah. Hari ${weakestDay} perlu perhatian.`,
+        if (scoreVelocity < -15) return {
+            title: "Lampu Kuning",
+            text: `Kualitas ibadahmu secara umum ${trendText} minggu ini. Jika ${habitInDanger !== "-" ? habitInDanger : "ibadah"} terasa berat, paksa pelan-pelan.`,
             color: "warning",
-            tip: "Jangan tinggalkan sholat."
+            tip: "Istighfar dan perbarui niat."
+        };
+        if (scoreVelocity > 10) return {
+            title: "Grafik Menanjak",
+            text: `Kualitas ibadahmu ${trendText}! Kamu sedang dalam fase semangat yang luar biasa.`,
+            color: "positive",
+            tip: "Bantu bagikan semangat ini ke sekitarmu."
         };
         return {
             title: "Tetap Istiqomah",
-            text: "Perjalananmu sudah baik. Jaga niat karena Allah.",
+            text: `Perjalananmu relatif stabil (${trendText}). Jaga niat hanya karena Allah.`,
             color: "positive",
-            tip: "Ajak teman beribadah."
+            tip: "Coba tingkatkan kualitas khusyuknya."
         };
   }
-
-  return { text: "Data belum cukup.", title: "Mulai", color: "neutral", tip: "Isi jurnal." };
 }

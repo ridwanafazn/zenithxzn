@@ -1,26 +1,20 @@
 "use client";
 
 import { useMemo, useState, useEffect } from "react";
-import { MASTER_HABITS, TimeBlock, HabitDefinition } from "@/lib/constants"; 
+import { TimeBlock } from "@/lib/constants"; 
 import HabitItem from "./HabitItem";
 import { Sunrise, Sun, Sunset, Moon, CloudMoon, CalendarDays, Plus, Droplets } from "lucide-react";
 import { getGlobalHijriOffset } from "@/actions/system";
-import { generateDailyHabits } from "@/lib/habit-engine"; 
+import { generateDailyHabits, DynamicHabit } from "@/lib/habit-engine"; 
 import { getSmartHijriDate } from "@/lib/utils";
 
 interface TrackerListProps {
-  userData: {
-    uid: string;
-    gender?: "male" | "female";
-    preferences?: {
-        isMenstruating?: boolean;
-        activeHabits: Record<string, boolean>;
-    };
-    location?: { lat: number; lng: number }; 
-    hijriOffset?: number; 
-  };
-  dailyLog: any;
-  date: string;
+  userData?: any; 
+  dailyLog?: any; 
+  date?: string;  
+  apiTimings?: any;
+  onHabitToggle: (id: string) => void; 
+  onCounterUpdate: (id: string, val: number) => void;
 }
 
 const TIME_BLOCK_CONFIG: Record<string, { label: string; icon: any; color: string }> = {
@@ -34,50 +28,63 @@ const TIME_BLOCK_CONFIG: Record<string, { label: string; icon: any; color: strin
   monthly: { label: "Bulanan", icon: CalendarDays, color: "text-teal-400" }
 };
 
-export default function TrackerList({ userData, dailyLog, date }: TrackerListProps) {
+export default function TrackerList({ 
+  userData, 
+  dailyLog, 
+  date = new Date().toISOString().split('T')[0],
+  apiTimings,
+  onHabitToggle, 
+  onCounterUpdate 
+}: TrackerListProps) {
+  
   const [systemOffset, setSystemOffset] = useState(0);
 
   useEffect(() => {
     getGlobalHijriOffset().then((val) => setSystemOffset(val));
   }, []);
 
-  const finalHijriOffset = (userData.hijriOffset || 0) + systemOffset;
+  const safeUserData = userData || {};
+  const safeLocation = safeUserData.location || { lat: -6.2088, lng: 106.8456 };
+  const safePrefs = safeUserData.preferences || {};
+  const safeGender = safeUserData.gender || "male";
+  const safeUid = safeUserData.uid || "guest";
+  const safeLog = dailyLog || {};
+  
+  const finalHijriOffset = (safeUserData.hijriOffset || 0) + systemOffset;
 
   const { filteredHabits, hijriDateDisplay } = useMemo(() => {
-     const dateObj = new Date(date);
-     const userLoc = userData.location || { lat: -6.2088, lng: 106.8456 };
-
+     const dateObj = new Date(date); 
+     
      const habits = generateDailyHabits({
         date: dateObj,
-        userPreferences: userData.preferences || {},
-        location: userLoc,
-        hijriOffset: finalHijriOffset
+        userPreferences: safePrefs,
+        location: safeLocation,
+        hijriOffset: finalHijriOffset,
+        apiTimings 
      });
 
      const hijriInfo = getSmartHijriDate(dateObj, finalHijriOffset);
 
      return { filteredHabits: habits, hijriDateDisplay: hijriInfo };
 
-  }, [date, userData.preferences, userData.location, finalHijriOffset]);
+  }, [date, safePrefs, safeLocation, finalHijriOffset, apiTimings]);
 
-  // Grouping
   const groupedHabits = filteredHabits.reduce((acc, habit) => {
     if (!acc[habit.timeBlock]) acc[habit.timeBlock] = [];
     acc[habit.timeBlock].push(habit);
     return acc;
-  }, {} as Record<TimeBlock, HabitDefinition[]>);
+  }, {} as Record<TimeBlock, DynamicHabit[]>); 
 
-  // Sorting
   Object.keys(groupedHabits).forEach((key) => {
       const k = key as TimeBlock;
-      groupedHabits[k].sort((a: HabitDefinition, b: HabitDefinition) => b.weight - a.weight);
+      groupedHabits[k].sort((a: DynamicHabit, b: DynamicHabit) => b.weight - a.weight);
   });
 
   const sectionOrder: TimeBlock[] = [
     "sepertiga_malam", "subuh", "pagi_siang", "sore", "maghrib_isya", "malam_tidur", "weekly", "monthly"
   ];
   
-  const isMenstruating = userData.preferences?.isMenstruating === true;
+  const isMenstruating = safePrefs.isMenstruating === true;
 
   return (
     <div className="relative space-y-8 pb-32 pl-4">
@@ -120,25 +127,26 @@ export default function TrackerList({ userData, dailyLog, date }: TrackerListPro
             </div>
             
             <div className="grid gap-3">
-              {/* FIX: Tambahkan tipe HabitDefinition pada parameter habit */}
-              {habits.map((habit: HabitDefinition) => {
-                const isCompleted = dailyLog?.checklists?.includes(habit.id) || false;
-                const currentCount = dailyLog?.counters?.[habit.id] || 0;
+              {habits.map((habit: DynamicHabit) => {
+                const isCompleted = safeLog.checklists?.includes(habit.id) || false;
+                const currentCount = safeLog.counters?.[habit.id] || 0;
                 
                 let displayHabit = habit;
                 const dayOfWeek = new Date(date).getDay();
-                if (habit.id === "sholat_zuhur" && dayOfWeek === 5 && userData.gender === "male") {
+                if (habit.id === "sholat_zuhur" && dayOfWeek === 5 && safeGender === "male") {
                     displayHabit = { ...habit, title: "Sholat Jumat" };
                 }
 
                 return (
                   <HabitItem
-                    key={habit.id}
+                    key={`${date}-${habit.id}`}
                     habit={displayHabit}
-                    userId={userData.uid}
+                    userId={safeUid} 
                     date={date}
                     isCompleted={isCompleted}
                     currentCount={currentCount}
+                    onToggle={() => onHabitToggle(habit.id)} 
+                    onCountChange={(val) => onCounterUpdate(habit.id, val)} 
                   />
                 );
               })}
